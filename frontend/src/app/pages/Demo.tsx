@@ -19,6 +19,89 @@ import {
 import { getDemoData } from "../../lib/api";
 import type { Analysis, PreSeededMessage, UploadedDocument } from "../../lib/types";
 
+// ── Hardcoded fallback data — used when backend is offline ──────────────────
+
+const FALLBACK_DOCUMENTS: UploadedDocument[] = [
+  { id: "d1", filename: "Supplier_A_Quotation.pdf", fileType: "pdf", fileSize: 245000, uploadedAt: new Date().toISOString(), processingStatus: "completed" },
+  { id: "d2", filename: "Supplier_B_Quotation.pdf", fileType: "pdf", fileSize: 198000, uploadedAt: new Date().toISOString(), processingStatus: "completed" },
+  { id: "d3", filename: "Existing_Contract_TechCorp.pdf", fileType: "pdf", fileSize: 512000, uploadedAt: new Date().toISOString(), processingStatus: "completed" },
+  { id: "d4", filename: "Invoice_TechCorp_March2026.pdf", fileType: "pdf", fileSize: 87000, uploadedAt: new Date().toISOString(), processingStatus: "completed" },
+  { id: "d5", filename: "Procurement_Policy.png", fileType: "image", fileSize: 340000, uploadedAt: new Date().toISOString(), processingStatus: "completed" },
+];
+
+const FALLBACK_ANALYSIS: Analysis = {
+  analyzedAt: new Date().toISOString(),
+  executiveSummary:
+    "Analysis of 5 procurement documents reveals two competing supplier quotations for IT infrastructure equipment. Supplier B presents a more favorable financial profile at $42,800 vs Supplier A at $45,200, with more flexible 60-day payment terms. A critical price discrepancy has been detected between the existing TechCorp invoice ($48,500) and their current quotation — warranting clarification before any contract renewal.",
+  risks: [
+    { id: "r1", level: "HIGH" as const, description: "Price discrepancy: TechCorp invoice ($48,500) exceeds current quotation ($45,200) by $3,300 — 7.3% variance requiring explanation", sourceDocument: "Invoice_TechCorp_March2026.pdf", category: "Financial" },
+    { id: "r2", level: "MEDIUM" as const, description: "Current TechCorp contract expires September 2026 — procurement must close within 90 days to avoid service gap", sourceDocument: "Existing_Contract_TechCorp.pdf", category: "Timeline" },
+    { id: "r3", level: "LOW" as const, description: "Supplier A requires 30-day payment terms — more aggressive than company standard 60-day policy", sourceDocument: "Supplier_A_Quotation.pdf", category: "Financial" },
+  ],
+  comparisonMatrix: [
+    { field: "Total Price", values: { "Supplier A": "$45,200", "Supplier B": "$42,800" }, winner: "Supplier B" },
+    { field: "Payment Terms", values: { "Supplier A": "30 days", "Supplier B": "60 days" }, winner: "Supplier B" },
+    { field: "Delivery Time", values: { "Supplier A": "14 days", "Supplier B": "21 days" }, winner: "Supplier A" },
+    { field: "Warranty", values: { "Supplier A": "1 year", "Supplier B": "2 years" }, winner: "Supplier B" },
+    { field: "Support SLA", values: { "Supplier A": "48 hours", "Supplier B": "24 hours" }, winner: "Supplier B" },
+  ],
+  conflicts: [
+    {
+      id: "c1",
+      type: "PRICE DISCREPANCY",
+      severity: "HIGH" as const,
+      documentA: { name: "Invoice_TechCorp_March2026.pdf", excerpt: "Total amount due: $48,500.00" },
+      documentB: { name: "Supplier_A_Quotation.pdf", excerpt: "Total quotation value: $45,200.00" },
+      explanation: "TechCorp last invoice is $3,300 higher than their current quotation for equivalent equipment.",
+      recommendedAction: "Request written clarification from TechCorp before any contract renewal.",
+    },
+  ],
+  recommendation: {
+    title: "Proceed with Supplier B",
+    summary:
+      "Supplier B offers lower cost ($42,800), better payment terms (60 days), extended warranty (2 years), and superior support SLA (24h). Clarify TechCorp invoice discrepancy regardless of final decision.",
+    nextSteps: [
+      "Initiate contract discussions with Supplier B",
+      "Request price clarification from TechCorp",
+      "Confirm delivery timeline meets operational requirements",
+    ],
+    confidence: 0.87,
+  },
+  suggestedQuestions: [
+    "Which supplier offers better value overall?",
+    "What are the payment term differences?",
+    "Why is there a price conflict in the TechCorp documents?",
+    "What deadlines should I be aware of?",
+    "Which supplier has better support terms?",
+    "What are the key risks in these documents?",
+  ],
+};
+
+const FALLBACK_MESSAGES: PreSeededMessage[] = [
+  {
+    id: "m1",
+    role: "user" as const,
+    content: "Which supplier should I choose?",
+    timestamp: new Date().toISOString(),
+  },
+  {
+    id: "m2",
+    role: "assistant" as const,
+    content: "Based on the uploaded documents, Supplier B is the recommended choice.",
+    timestamp: new Date().toISOString(),
+    structuredResponse: {
+      answer: "Supplier B is the recommended choice based on overall value, payment flexibility, and support terms.",
+      evidence: [
+        { quote: "Total quotation value: $42,800.00", sourceDocument: "Supplier_B_Quotation.pdf", documentType: "pdf" },
+        { quote: "Payment terms: Net 60 days from invoice date", sourceDocument: "Supplier_B_Quotation.pdf", documentType: "pdf" },
+        { quote: "Warranty period: 24 months from delivery", sourceDocument: "Supplier_B_Quotation.pdf", documentType: "pdf" },
+      ],
+      risks: "Supplier B delivery timeline is 21 days vs Supplier A at 14 days. Factor this in if urgency is critical.",
+      recommendation: "Initiate contract discussions with Supplier B. Negotiate delivery timeline if 14-day delivery is operationally required.",
+    },
+  },
+];
+
 // AMD-branded loading screen
 function DemoLoader() {
   return (
@@ -95,7 +178,13 @@ export default function Demo() {
   useEffect(() => {
     getDemoData()
       .then((data) => { setDocuments(data.documents); setAnalysis(data.analysis); setPreSeededMessages(data.preSeededMessages ?? []); })
-      .catch((err: unknown) => { setError(err instanceof Error ? err.message : "Failed to load demo data."); })
+      .catch(() => {
+        // Backend offline — use hardcoded fallback so demo always works
+        console.info("[Demo] Backend unavailable, using fallback data");
+        setDocuments(FALLBACK_DOCUMENTS);
+        setAnalysis(FALLBACK_ANALYSIS);
+        setPreSeededMessages(FALLBACK_MESSAGES);
+      })
       .finally(() => setIsLoading(false));
   }, []);
 

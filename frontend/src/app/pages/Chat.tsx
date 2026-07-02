@@ -110,7 +110,7 @@ export default function Chat() {
     setStreamingAnswer("");
     setSidebarOpen(false);
 
-    const historyForAPI = messages.slice(-6).map(m => ({
+    const historyForAPI = messages.slice(-10).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.role === 'user'
         ? (m as UserMessage).content

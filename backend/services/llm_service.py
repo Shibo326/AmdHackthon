@@ -108,31 +108,44 @@ class LLMService:
     ) -> str:
         """
         Call Groq API — Llama 3.3 70B, fast and free.
-        Raises on any error so callers get a real error, not mock data.
+        Retries up to 3 attempts with exponential backoff on rate limit errors.
+        Raises immediately on any non-rate-limit exception.
         """
-        def _sync_call() -> str:
+        for attempt in range(3):
             try:
-                response = self._groq_client.chat.completions.create(
-                    model=self._groq_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=0.1,
-                )
-            except Exception as exc:
-                # Detect rate limit / quota errors from Groq SDK
-                exc_str = str(exc).lower()
-                if "rate_limit_exceeded" in exc_str or "429" in exc_str or "rate limit" in exc_str:
-                    raise LLMRateLimitError(str(exc)) from exc
-                raise
-            content = response.choices[0].message.content
-            logger.info(f"[GROQ] Response received ({len(content)} chars)")
-            return content
+                def _sync_call() -> str:
+                    try:
+                        response = self._groq_client.chat.completions.create(
+                            model=self._groq_model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                            max_tokens=max_tokens,
+                            temperature=0.1,
+                        )
+                    except Exception as exc:
+                        # Detect rate limit / quota errors from Groq SDK
+                        exc_str = str(exc).lower()
+                        if "rate_limit_exceeded" in exc_str or "429" in exc_str or "rate limit" in exc_str:
+                            raise LLMRateLimitError(str(exc)) from exc
+                        raise
+                    content = response.choices[0].message.content
+                    logger.info(f"[GROQ] Response received ({len(content)} chars)")
+                    return content
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_call)
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, _sync_call)
+
+            except LLMRateLimitError:
+                if attempt < 2:
+                    wait = (attempt + 1) * 3
+                    logger.warning(f"[GROQ] Rate limited — retry {attempt + 1}/3 in {wait}s")
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+            except Exception:
+                raise
 
     async def _complete_claude(
         self,

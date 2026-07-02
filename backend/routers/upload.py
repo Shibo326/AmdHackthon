@@ -50,6 +50,18 @@ def _err(status: int, message: str, code: str):
     )
 
 
+def _validate_magic_bytes(data: bytes, mime_type: str) -> bool:
+    """Verify file content matches claimed MIME type via magic bytes."""
+    if mime_type == "application/pdf":
+        return data[:4] == b"%PDF"
+    if mime_type == "image/png":
+        return data[:8] == b"\x89PNG\r\n\x1a\n"
+    if mime_type in ("image/jpeg", "image/jpg"):
+        return data[:2] == b"\xff\xd8"
+    # DOCX and other formats — skip magic check
+    return True
+
+
 @router.post("/upload")
 async def upload_documents(
     files: List[UploadFile] = File(...),
@@ -64,6 +76,9 @@ async def upload_documents(
     embedding_service = _embedding_service
     vector_store = _vector_store
     session_manager = _session_manager
+
+    # --- Cleanup expired sessions before creating a new one ---
+    session_manager.cleanup_old_sessions(max_age_hours=4)
 
     # --- Validate file count ---
     if len(files) == 0:
@@ -114,6 +129,20 @@ async def upload_documents(
         # --- Validate file size ---
         if file_size > MAX_FILE_SIZE:
             return _err(400, "This file exceeds the 10 MB limit.", "FILE_SIZE_EXCEEDED")
+
+        # --- Validate magic bytes (file content matches declared type) ---
+        if not _validate_magic_bytes(file_bytes, mime_type):
+            doc = UploadedDocument(
+                id=doc_id,
+                filename=filename,
+                fileType=file_type,
+                fileSize=file_size,
+                uploadedAt=uploaded_at,
+                processingStatus=ProcessingStatus.FAILED,
+            )
+            uploaded_documents.append(doc)
+            logger.warning(f"Magic bytes mismatch for {filename} (claimed {mime_type})")
+            continue
 
         # --- Process file ---
         try:
