@@ -96,11 +96,11 @@ class AnalysisService:
             f"({len(chunks)} chunks, {len(doc_names)} documents)"
         )
 
-        # DEBUG: Log first chunk content to verify document was extracted
+        # Log first chunk content to verify document was extracted
         if chunks:
-            logger.info(f"[DEBUG] First chunk (source={chunks[0].source_document}): {chunks[0].text[:200]}")
+            logger.debug(f"First chunk preview (source={chunks[0].source_document}): {chunks[0].text[:200]}")
         else:
-            logger.warning("[DEBUG] NO CHUNKS available for analysis!")
+            logger.warning("No chunks available — document extraction may have failed")
 
         # Run LLM calls in two batches to avoid rate limiting on free-tier APIs
         # Batch 1: summary, risks, suggested questions (lighter calls)
@@ -118,17 +118,25 @@ class AnalysisService:
         # Small delay between batches to respect rate limits
         await asyncio.sleep(0.5)
 
-        # Batch 2: matrix, recommendation, conflicts (heavier calls)
+        # Batch 2: matrix + recommendation only (conflict detection runs separately)
         (
             matrix_result,
             recommendation_result,
-            conflicts,
         ) = await asyncio.gather(
             self._generate_comparison_matrix(system_prompt, chunks, doc_names),
             self._generate_recommendation(system_prompt, chunks),
-            self.conflict_engine.detect(chunks, doc_names),
             return_exceptions=True,
         )
+
+        # Small delay before conflict detection to further reduce simultaneous Groq calls
+        await asyncio.sleep(0.5)
+
+        # Conflict detection runs SEPARATELY after Batch 2 to reduce parallel LLM calls
+        try:
+            conflicts = await self.conflict_engine.detect(chunks, doc_names)
+        except Exception as e:
+            logger.warning(f"Conflict detection failed, using empty: {e}")
+            conflicts = []
 
         # Check for exceptions in parallel results
         if isinstance(summary_result, Exception):
@@ -140,9 +148,6 @@ class AnalysisService:
             matrix_result = []
         if isinstance(recommendation_result, Exception):
             raise LLMParseError(f"Recommendation failed: {recommendation_result}") from recommendation_result
-        if isinstance(conflicts, Exception):
-            logger.warning(f"Conflict detection failed, using empty: {conflicts}")
-            conflicts = []
         if isinstance(suggested_questions, Exception):
             logger.warning(f"Suggested questions failed, using empty: {suggested_questions}")
             suggested_questions = []

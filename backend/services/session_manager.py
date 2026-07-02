@@ -167,3 +167,25 @@ class SessionManager:
     def session_exists(self, session_id: str) -> bool:
         """Check whether a session with the given ID exists."""
         return session_id in self.sessions
+
+    def cleanup_old_sessions(self, max_age_hours: int = 4) -> int:
+        """Remove sessions older than max_age_hours. Returns count removed."""
+        from datetime import timedelta
+        now = datetime.utcnow()
+        expired_ids = [
+            sid for sid, session in self.sessions.items()
+            if (now - session.created_at).total_seconds() > max_age_hours * 3600
+        ]
+        for sid in expired_ids:
+            del self.sessions[sid]
+            # Also remove persisted JSON file if it exists
+            persist_path = self._session_path(sid)
+            if os.path.exists(persist_path):
+                try:
+                    os.unlink(persist_path)
+                except Exception:
+                    pass
+            logger.info(f"[SESSION] Expired and removed session {sid}")
+        if expired_ids:
+            logger.info(f"[SESSION] Cleaned up {len(expired_ids)} expired session(s)")
+        return len(expired_ids)
