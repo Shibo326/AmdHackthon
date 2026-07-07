@@ -77,6 +77,10 @@ async def upload_documents(
     vector_store = _vector_store
     session_manager = _session_manager
 
+    # Guard against uninitialised services (startup failure)
+    if not session_manager or not document_parser or not embedding_service or not vector_store:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
+
     # --- Cleanup expired sessions before creating a new one ---
     session_manager.cleanup_old_sessions(max_age_hours=4)
 
@@ -233,6 +237,8 @@ async def check_session(session_id: str):
     Used by the frontend on startup to detect stale localStorage sessions.
     """
     session_manager = _session_manager
+    if not session_manager:
+        return JSONResponse(status_code=503, content={"valid": False, "error": "Service unavailable.", "code": "SERVICE_UNAVAILABLE", "details": None})
     try:
         session_manager.get_session(session_id)
         return JSONResponse(content={"valid": True})
