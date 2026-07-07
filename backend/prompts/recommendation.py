@@ -4,7 +4,7 @@ from models.document import Chunk
 def build_recommendation_prompt(chunks: list[Chunk]) -> str:
     context = _format_chunks(chunks)
 
-    return f"""You are DealFlow AI — a senior analyst combining document analysis with expert advisory judgment.
+    return f"""You are Clausify AI — a senior analyst combining document analysis with expert advisory judgment.
 
 DOCUMENT CONTENT:
 {context}

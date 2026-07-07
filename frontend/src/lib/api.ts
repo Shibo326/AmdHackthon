@@ -6,7 +6,12 @@ import type {
 } from './types';
 
 export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
+  (import.meta.env.VITE_API_URL as string | undefined) ?? '';
+
+// In development, Vite's proxy (vite.config.ts server.proxy) forwards all
+// /api/* requests to the FastAPI backend at http://localhost:8000.
+// In production, set VITE_API_URL to your deployed backend origin at build time,
+// e.g. VITE_API_URL=https://api.yourapp.com
 
 /**
  * Upload one or more files for analysis.
@@ -14,7 +19,6 @@ export const API_BASE_URL: string =
  */
 export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
   const url = `${API_BASE_URL}/api/upload`;
-  console.log(`[API] POST ${url} — uploading ${files.length} file(s):`, files.map((f) => f.name));
 
   const formData = new FormData();
   for (const file of files) {
@@ -25,8 +29,6 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
     method: 'POST',
     body: formData,
   });
-
-  console.log(`[API] POST ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Upload failed' }));
@@ -42,15 +44,12 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
  */
 export async function analyzeDocuments(sessionId: string): Promise<AnalyzeResponse> {
   const url = `${API_BASE_URL}/api/analyze`;
-  console.log(`[API] POST ${url} — sessionId=${sessionId}`);
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
   });
-
-  console.log(`[API] POST ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Analysis failed' }));
@@ -75,15 +74,12 @@ export async function sendChatMessage(
   history: ChatHistoryMessage[] = [],
 ): Promise<ChatResponse> {
   const url = `${API_BASE_URL}/api/chat`;
-  console.log(`[API] POST ${url} — sessionId=${sessionId}, question="${question}"`);
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, question, history }),
   });
-
-  console.log(`[API] POST ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Chat failed' }));
@@ -99,15 +95,12 @@ export async function sendChatMessage(
  */
 export async function exportReport(sessionId: string): Promise<Blob> {
   const url = `${API_BASE_URL}/api/report`;
-  console.log(`[API] POST ${url} — sessionId=${sessionId}`);
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
   });
-
-  console.log(`[API] POST ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Export failed' }));
@@ -123,15 +116,12 @@ export async function exportReport(sessionId: string): Promise<Blob> {
  */
 export async function getSuggestedQuestions(sessionId: string): Promise<string[]> {
   const url = `${API_BASE_URL}/api/suggest-questions`;
-  console.log(`[API] POST ${url} — sessionId=${sessionId}`);
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
   });
-
-  console.log(`[API] POST ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to generate questions' }));
@@ -242,13 +232,10 @@ export async function streamChatMessage(
  */
 export async function getDemoData(): Promise<DemoResponse> {
   const url = `${API_BASE_URL}/api/demo`;
-  console.log(`[API] GET ${url}`);
 
   const response = await fetch(url, {
     method: 'GET',
   });
-
-  console.log(`[API] GET ${url} → ${response.status}`);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to load demo' }));

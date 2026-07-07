@@ -19,4 +19,16 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  server: {
+    // Proxy all /api requests to the FastAPI backend in development.
+    // This avoids CORS issues and ensures the base URL never needs to be
+    // hardcoded — the frontend always uses relative /api/... paths.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

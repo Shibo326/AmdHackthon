@@ -36,6 +36,10 @@ async def generate_report(request: ReportRequest):
     pdf_generator = _pdf_generator
     session_manager = _session_manager
 
+    # Guard against uninitialised services (startup failure)
+    if not pdf_generator or not session_manager:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
+
     session_id = request.sessionId
 
     # --- Validate session with completed analysis ---

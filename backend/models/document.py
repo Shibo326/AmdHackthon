@@ -20,7 +20,7 @@ class UploadedDocument(BaseModel):
 
     id: str
     filename: str
-    fileType: Literal["pdf", "image"]
+    fileType: Literal["pdf", "image", "document"]
     fileSize: int
     uploadedAt: datetime
     processingStatus: ProcessingStatus
@@ -31,5 +31,5 @@ class Chunk(BaseModel):
     text: str
     embedding: list[float]
     source_document: str
-    document_type: Literal["pdf", "image"]
+    document_type: Literal["pdf", "image", "document"]
     chunk_index: int

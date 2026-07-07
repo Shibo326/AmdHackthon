@@ -36,7 +36,7 @@ class DocumentParser:
         """
         if mime_type == "application/pdf":
             return self._extract_pdf(file_bytes)
-        elif mime_type in ("image/png", "image/jpeg", "image/jpg"):
+        elif mime_type in ("image/png", "image/jpeg", "image/jpg", "image/jfif", "image/pjpeg"):
             return self._extract_image(file_bytes)
         elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             return self._extract_docx(file_bytes)

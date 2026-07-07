@@ -52,6 +52,10 @@ async def chat(request: ChatRequest):
     session_manager = _session_manager
     llm_service = _llm_service
 
+    # Guard against uninitialised services (startup failure)
+    if not embedding_service or not vector_store or not session_manager or not llm_service:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
+
     session_id = request.sessionId
     question = request.question
 
@@ -202,6 +206,12 @@ async def chat_stream(request: ChatRequest):
     session_manager = _session_manager
     llm_service = _llm_service
 
+    # Guard against uninitialised services (startup failure)
+    if not embedding_service or not vector_store or not session_manager or not llm_service:
+        async def svc_err_gen():
+            yield f"data: {json.dumps({'type': 'error', 'code': 'SERVICE_UNAVAILABLE', 'error': 'Service unavailable — backend is still starting up.'})}\n\n"
+        return StreamingResponse(svc_err_gen(), media_type="text/event-stream")
+
     session_id = request.sessionId
     question = request.question
     start_time = time.time()
@@ -240,7 +250,51 @@ async def chat_stream(request: ChatRequest):
             # Get full LLM response
             raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=4096)
             raw = _strip_json_fences(raw)
-            data = json.loads(raw)
+
+            # Sanitize control characters (same as non-streaming route)
+            import re as _re
+            raw = raw.replace('\r\n', '\\n').replace('\r', '\\n')
+            raw = raw.replace('\t', '\\t')
+            raw = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+
+            # Parse JSON with fallback extraction — matches robustness of /api/chat
+            data = None
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                brace_start = raw.find("{")
+                brace_end = raw.rfind("}")
+                if brace_start != -1 and brace_end > brace_start:
+                    try:
+                        data = json.loads(raw[brace_start:brace_end + 1])
+                    except json.JSONDecodeError:
+                        cleaned = _re.sub(r',\s*([}\]])', r'\1', raw[brace_start:brace_end + 1])
+                        try:
+                            data = json.loads(cleaned)
+                        except json.JSONDecodeError:
+                            pass
+
+            if data is None:
+                # Last resort: stream the raw text as the answer
+                words = raw.strip().split(" ")
+                for i, word in enumerate(words):
+                    yield f"data: {json.dumps({'type': 'token', 'text': word + (' ' if i < len(words) - 1 else '')})}\n\n"
+                    await asyncio.sleep(0.018)
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                final = {
+                    "type": "done",
+                    "messageId": str(uuid.uuid4()),
+                    "role": "assistant",
+                    "structuredResponse": {
+                        "answer": raw.strip(),
+                        "evidence": [],
+                        "risks": "",
+                        "recommendation": "",
+                    },
+                    "processingTimeMs": elapsed_ms,
+                }
+                yield f"data: {json.dumps(final)}\n\n"
+                return
 
             answer = data.get("answer", "")
 

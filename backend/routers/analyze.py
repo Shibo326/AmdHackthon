@@ -41,6 +41,10 @@ async def suggest_questions(request: Request, body: AnalyzeRequest):
     vector_store = _vector_store
     analysis_service = _analysis_service
 
+    # Guard against uninitialised services (startup failure)
+    if not session_manager or not vector_store or not analysis_service:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
+
     session_id = body.sessionId
 
     # --- Validate session ---
@@ -77,6 +81,10 @@ async def analyze_documents(request: Request, body: AnalyzeRequest):
     analysis_service = _analysis_service
     session_manager = _session_manager
     vector_store = _vector_store
+
+    # Guard against uninitialised services (startup failure)
+    if not analysis_service or not session_manager or not vector_store:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
 
     session_id = body.sessionId
 
