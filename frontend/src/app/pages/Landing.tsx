@@ -112,10 +112,23 @@ export default function Landing() {
       navigate("/dashboard");
     } catch (err) {
       stageTimers.forEach(clearTimeout);
-      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const rawMsg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+
+      // Map common network/fetch errors to a clear actionable message
+      const isNetworkError =
+        rawMsg.toLowerCase().includes("failed to fetch") ||
+        rawMsg.toLowerCase().includes("network") ||
+        rawMsg.toLowerCase().includes("fetch") ||
+        rawMsg.toLowerCase().includes("networkerror") ||
+        rawMsg.toLowerCase().includes("load failed");
+
+      const msg = isNetworkError
+        ? "Cannot reach the server. Make sure the backend is running on port 8000."
+        : rawMsg;
+
       setError(msg);
-      if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
-        toast.error("Network error — is the backend running?");
+      if (isNetworkError) {
+        toast.error("Backend offline — run: uvicorn main:app --port 8000");
       }
       setIsLoading(false);
     }
