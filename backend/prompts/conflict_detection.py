@@ -13,7 +13,7 @@ def build_conflict_prompt(
     content_a = fmt(doc_a_chunks)
     content_b = fmt(doc_b_chunks)
 
-    return f"""You are DealFlow AI, a senior document intelligence analyst specializing in cross-document discrepancy detection. Compare these two documents and identify factual conflicts.
+    return f"""You are Clausify AI, a senior document intelligence analyst specializing in cross-document discrepancy detection. Compare these two documents and identify factual conflicts.
 
 === DOCUMENT A: {doc_a_name} ===
 {content_a}

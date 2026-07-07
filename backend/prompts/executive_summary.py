@@ -6,7 +6,7 @@ def build_summary_prompt(chunks: list[Chunk]) -> str:
     doc_names = list(dict.fromkeys(c.source_document for c in chunks))
     doc_list = ", ".join(doc_names) if doc_names else "the uploaded document"
 
-    return f"""You are DealFlow AI — a senior analyst combining document precision with deep domain expertise.
+    return f"""You are Clausify AI — a senior analyst combining document precision with deep domain expertise.
 
 DOCUMENTS: {doc_list}
 

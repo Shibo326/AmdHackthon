@@ -4,7 +4,7 @@ from models.document import Chunk
 def build_risk_prompt(chunks: list[Chunk]) -> str:
     context = _format_chunks(chunks)
 
-    return f"""You are DealFlow AI — a senior risk analyst combining document review with domain expertise.
+    return f"""You are Clausify AI — a senior risk analyst combining document review with domain expertise.
 
 DOCUMENT CONTENT:
 {context}

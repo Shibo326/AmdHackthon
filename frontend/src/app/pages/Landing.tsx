@@ -70,12 +70,12 @@ export default function Landing() {
       const mime = f.type.toLowerCase();
       const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
       return (
-        ["application/pdf", "image/png", "image/jpeg", "image/jpg"].includes(mime) ||
-        ["pdf", "png", "jpg", "jpeg"].includes(ext)
+        ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/jfif", "image/pjpeg"].includes(mime) ||
+        ["pdf", "png", "jpg", "jpeg", "jfif", "jpe"].includes(ext)
       );
     });
     const rejected = incoming.length - accepted.length;
-    if (rejected > 0) setError(`${rejected} file(s) skipped — only PDF, PNG, and JPEG are supported.`);
+    if (rejected > 0) setError(`${rejected} file(s) skipped — only PDF, PNG, JPEG, and JFIF are supported.`);
     setFiles((prev) => {
       const combined = [...prev, ...accepted];
       if (combined.length > 10) {
@@ -112,10 +112,23 @@ export default function Landing() {
       navigate("/dashboard");
     } catch (err) {
       stageTimers.forEach(clearTimeout);
-      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const rawMsg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+
+      // Map common network/fetch errors to a clear actionable message
+      const isNetworkError =
+        rawMsg.toLowerCase().includes("failed to fetch") ||
+        rawMsg.toLowerCase().includes("network") ||
+        rawMsg.toLowerCase().includes("fetch") ||
+        rawMsg.toLowerCase().includes("networkerror") ||
+        rawMsg.toLowerCase().includes("load failed");
+
+      const msg = isNetworkError
+        ? "Cannot reach the server. Make sure the backend is running on port 8000."
+        : rawMsg;
+
       setError(msg);
-      if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
-        toast.error("Network error — is the backend running?");
+      if (isNetworkError) {
+        toast.error("Backend offline — run: uvicorn main:app --port 8000");
       }
       setIsLoading(false);
     }
@@ -201,7 +214,7 @@ export default function Landing() {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+          accept=".pdf,.png,.jpg,.jpeg,.jfif,.jpe,application/pdf,image/png,image/jpeg"
           style={{ display: "none" }}
           onChange={handleFileInputChange}
         />
@@ -246,14 +259,14 @@ export default function Landing() {
                 Drop your business documents here
               </h3>
               <p style={{ fontFamily: "Inter, sans-serif", fontSize: "14px", color: "#4A5878", marginBottom: "14px", textAlign: "center" }}>
-                PDF, PNG, JPG, JPEG — up to 10 files, 10MB each
+                PDF, PNG, JPG, JPEG, JFIF — up to 10 files, 10MB each
               </p>
               <span style={{ fontFamily: "Inter, sans-serif", fontSize: "14px", fontWeight: 500, color: "#3B7BF6", textDecoration: "underline", marginBottom: "18px" }}>
                 or browse files
               </span>
 
               <div className="flex flex-wrap gap-2 justify-center">
-                {["PDF", "PNG", "JPG", "JPEG"].map((fmt) => (
+                {["PDF", "PNG", "JPG", "JPEG", "JFIF"].map((fmt) => (
                   <div key={fmt} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md" style={{ background: "#111E35", border: "1px solid #1E2D4A" }}>
                     <File size={11} style={{ color: "#4A5878" }} />
                     <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#4A5878" }}>{fmt}</span>

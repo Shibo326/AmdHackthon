@@ -30,6 +30,8 @@ ACCEPTED_MIME_TYPES = {
     "application/pdf",
     "image/png",
     "image/jpeg",
+    "image/jfif",    # Some browsers send this for .jfif files
+    "image/pjpeg",   # Progressive JPEG / IE legacy MIME type
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
@@ -38,6 +40,8 @@ MIME_TO_FILE_TYPE = {
     "application/pdf": "pdf",
     "image/png": "image",
     "image/jpeg": "image",
+    "image/jfif": "image",
+    "image/pjpeg": "image",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
 }
 
@@ -56,7 +60,7 @@ def _validate_magic_bytes(data: bytes, mime_type: str) -> bool:
         return data[:4] == b"%PDF"
     if mime_type == "image/png":
         return data[:8] == b"\x89PNG\r\n\x1a\n"
-    if mime_type in ("image/jpeg", "image/jpg"):
+    if mime_type in ("image/jpeg", "image/jpg", "image/jfif", "image/pjpeg"):
         return data[:2] == b"\xff\xd8"
     # DOCX and other formats — skip magic check
     return True
@@ -76,6 +80,10 @@ async def upload_documents(
     embedding_service = _embedding_service
     vector_store = _vector_store
     session_manager = _session_manager
+
+    # Guard against uninitialised services (startup failure)
+    if not session_manager or not document_parser or not embedding_service or not vector_store:
+        return _err(503, "Service unavailable — backend is still starting up.", "SERVICE_UNAVAILABLE")
 
     # --- Cleanup expired sessions before creating a new one ---
     session_manager.cleanup_old_sessions(max_age_hours=4)
@@ -107,6 +115,8 @@ async def upload_documents(
                 "png": "image/png",
                 "jpg": "image/jpeg",
                 "jpeg": "image/jpeg",
+                "jfif": "image/jpeg",   # JFIF is JPEG — same magic bytes, same decoder
+                "jpe": "image/jpeg",
                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             }
             if ext in ext_to_mime:
@@ -122,7 +132,7 @@ async def upload_documents(
         if mime_type not in ACCEPTED_MIME_TYPES:
             return _err(
                 400,
-                f"Unsupported file format: {mime_type}. Accepted formats: PDF, PNG, JPEG.",
+                f"Unsupported file format: {mime_type}. Accepted formats: PDF, PNG, JPEG, JFIF.",
                 "UNSUPPORTED_FORMAT",
             )
 
@@ -233,6 +243,8 @@ async def check_session(session_id: str):
     Used by the frontend on startup to detect stale localStorage sessions.
     """
     session_manager = _session_manager
+    if not session_manager:
+        return JSONResponse(status_code=503, content={"valid": False, "error": "Service unavailable.", "code": "SERVICE_UNAVAILABLE", "details": None})
     try:
         session_manager.get_session(session_id)
         return JSONResponse(content={"valid": True})
