@@ -178,13 +178,23 @@ class SessionManager:
         ]
         for sid in expired_ids:
             del self.sessions[sid]
-            # Also remove persisted JSON file if it exists
+            # Remove persisted JSON file
             persist_path = self._session_path(sid)
             if os.path.exists(persist_path):
                 try:
                     os.unlink(persist_path)
                 except Exception:
                     pass
+            # Remove orphaned ChromaDB collection
+            try:
+                import chromadb
+                from services.vector_store import _get_client
+                chroma_client = _get_client()
+                collection_name = f"session_{sid.replace('-', '_')}"
+                chroma_client.delete_collection(name=collection_name)
+                logger.info(f"[SESSION] Deleted ChromaDB collection for session {sid}")
+            except Exception:
+                pass  # Collection may not exist — non-fatal
             logger.info(f"[SESSION] Expired and removed session {sid}")
         if expired_ids:
             logger.info(f"[SESSION] Cleaned up {len(expired_ids)} expired session(s)")
