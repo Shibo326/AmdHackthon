@@ -58,8 +58,8 @@ class ConflictEngine:
             logger.info(f"Limiting conflict detection from {len(pairs)} pairs to {MAX_PAIRS}")
             pairs = pairs[:MAX_PAIRS]
 
-        # Compare document pairs
-        for doc_a_name, doc_b_name in pairs:
+        # Compare document pairs sequentially with delay to respect rate limits
+        for i, (doc_a_name, doc_b_name) in enumerate(pairs):
             doc_a_chunks = doc_chunks.get(doc_a_name, [])
             doc_b_chunks = doc_chunks.get(doc_b_name, [])
 
@@ -83,6 +83,11 @@ class ConflictEngine:
                     f"Conflict detection failed for {doc_a_name} vs {doc_b_name}: {e}"
                 )
                 continue
+
+            # Small delay between pairs to avoid hitting TPM rate limits
+            if i < len(pairs) - 1:
+                import asyncio
+                await asyncio.sleep(1.0)
 
         logger.info(f"Found {len(all_conflicts)} conflict(s) across {len(document_names)} documents")
         return all_conflicts

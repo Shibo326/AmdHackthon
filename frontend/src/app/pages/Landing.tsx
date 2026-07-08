@@ -106,7 +106,11 @@ export default function Landing() {
     } catch (err) {
       stageTimers.forEach(clearTimeout);
       const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setError(msg);
+      // Give a clearer message for rate limit errors
+      const displayMsg = msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("rate") || msg.toLowerCase().includes("429")
+        ? "API quota reached — the AI provider has a free-tier daily limit. Please wait ~1 hour and try again, or upload fewer documents at once."
+        : msg;
+      setError(displayMsg);
       if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
         toast.error("Network error — is the backend running?");
       }

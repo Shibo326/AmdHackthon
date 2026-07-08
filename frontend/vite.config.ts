@@ -17,6 +17,18 @@ export default defineConfig({
     },
   },
 
+  // Proxy /api/* to the FastAPI backend in dev mode.
+  // This avoids CORS issues and ensures fetch('/api/...') works when
+  // VITE_API_URL is blank (the default for local development).
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
+
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

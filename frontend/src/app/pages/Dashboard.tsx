@@ -21,6 +21,79 @@ import {
 import { exportReport, analyzeDocuments } from "../../lib/api";
 import { toast } from "sonner";
 import { useAppState, useAppDispatch } from "../../lib/store";
+import type { AppAction } from "../../lib/store";
+import type { UploadedDocument } from "../../lib/types";
+import type { Dispatch } from "react";
+
+// ── DashboardSidebar ─────────────────────────────────────────────────────────
+// Extracted outside Dashboard to prevent full remount on every parent re-render.
+interface DashboardSidebarProps {
+  documents: UploadedDocument[];
+  dispatch: Dispatch<AppAction>;
+}
+
+function DashboardSidebar({ documents, dispatch }: DashboardSidebarProps) {
+  return (
+    <>
+      <div className="p-5 flex items-center justify-between">
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--ash)" }}>
+          Session Documents
+        </span>
+        <span className="px-2 py-0.5 rounded-full" style={{ background: "var(--graphite)", fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--paper)" }}>
+          {documents.length}
+        </span>
+      </div>
+
+      <div>
+        {documents.map((doc) => {
+          const isImage = doc.fileType === "image";
+          return (
+            <div
+              key={doc.id}
+              className="px-4 py-3 cursor-pointer"
+              style={{ borderBottom: "1px solid rgba(42,45,62,0.3)", borderLeft: "2px solid transparent", transition: "background 0.15s, border-left-color 0.15s" }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "var(--graphite)"; e.currentTarget.style.borderLeftColor = "var(--volt)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderLeftColor = "transparent"; }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex items-center justify-center rounded-md shrink-0" style={{ width: "24px", height: "24px", background: isImage ? "rgba(59,123,246,0.1)" : "rgba(237,28,36,0.1)", border: `1px solid ${isImage ? "rgba(59,123,246,0.3)" : "rgba(237,28,36,0.3)"}` }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", fontWeight: 600, color: isImage ? "var(--volt)" : "var(--conflict)" }}>
+                    {isImage ? "IMG" : "PDF"}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="truncate" style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--paper)" }}>
+                    {doc.filename}
+                  </div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: doc.processingStatus === "completed" ? "var(--cleared)" : "var(--caution)" }}>
+                    {doc.processingStatus === "completed" ? (isImage ? "Image · OCR Complete" : "Processed") : "Processing..."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--rule)", marginTop: "16px" }}>
+        <div className="p-4 space-y-3">
+          <Link to="/" style={{ display: "block" }}>
+            <GhostButton style={{ width: "100%", height: "36px" }}>Upload More</GhostButton>
+          </Link>
+          <div className="text-center">
+            <button
+              onClick={() => dispatch({ type: "RESET" })}
+              style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", background: "none", border: "none", cursor: "pointer" }}
+            >
+              New Session
+            </button>
+          </div>
+          <div className="flex justify-center pt-1"><AMDBadge /></div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function Dashboard() {
   const dispatch = useAppDispatch();
@@ -105,64 +178,6 @@ export default function Dashboard() {
   const hasConflicts = analysis.conflicts.length > 0;
   const hasHighRisk = analysis.risks.some((r) => r.level === "HIGH");
 
-  const SidebarContent = () => (
-    <>
-      <div className="p-5 flex items-center justify-between">
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--ash)" }}>
-          Session Documents
-        </span>
-        <span className="px-2 py-0.5 rounded-full" style={{ background: "var(--graphite)", fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--paper)" }}>
-          {documents.length}
-        </span>
-      </div>
-
-      <div>
-        {documents.map((doc) => {
-          const isImage = doc.fileType === "image";
-          return (
-            <div
-              key={doc.id}
-              className="px-4 py-3 cursor-pointer"
-              style={{ borderBottom: "1px solid rgba(42,45,62,0.3)", borderLeft: "2px solid transparent", transition: "background 0.15s, border-left-color 0.15s" }}
-              onMouseOver={(e) => { e.currentTarget.style.background = "var(--graphite)"; e.currentTarget.style.borderLeftColor = "var(--volt)"; }}
-              onMouseOut={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderLeftColor = "transparent"; }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex items-center justify-center rounded-md shrink-0" style={{ width: "24px", height: "24px", background: isImage ? "rgba(59,123,246,0.1)" : "rgba(237,28,36,0.1)", border: `1px solid ${isImage ? "rgba(59,123,246,0.3)" : "rgba(237,28,36,0.3)"}` }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", fontWeight: 600, color: isImage ? "var(--volt)" : "var(--conflict)" }}>
-                    {isImage ? "IMG" : "PDF"}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="truncate" style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--paper)" }}>
-                    {doc.filename}
-                  </div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: doc.processingStatus === "completed" ? "var(--cleared)" : "var(--caution)" }}>
-                    {doc.processingStatus === "completed" ? (isImage ? "Image · OCR Complete" : "Processed") : "Processing..."}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--rule)", marginTop: "16px" }}>
-        <div className="p-4 space-y-3">
-          <Link to="/" style={{ display: "block" }}>
-            <GhostButton style={{ width: "100%", height: "36px" }}>Upload More</GhostButton>
-          </Link>
-          <div className="text-center">
-            <button onClick={() => dispatch({ type: "RESET" })} style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", background: "none", border: "none", cursor: "pointer" }}>
-              New Session
-            </button>
-          </div>
-          <div className="flex justify-center pt-1"><AMDBadge /></div>
-        </div>
-      </div>
-    </>
-  );
-
   return (
     <div className="min-h-screen" style={{ background: "var(--ink)" }}>
       <NavigationBar showDemo={false} />
@@ -194,7 +209,7 @@ export default function Dashboard() {
           className="hidden md:block shrink-0"
           style={{ width: "260px", minHeight: "calc(100vh - 108px)", background: "var(--lead)", borderRight: "1px solid var(--rule)" }}
         >
-          <SidebarContent />
+          <DashboardSidebar documents={documents} dispatch={dispatch} />
         </div>
 
         {/* Mobile Sidebar Drawer */}
@@ -215,7 +230,7 @@ export default function Dashboard() {
                   <X size={18} />
                 </button>
               </div>
-              <SidebarContent />
+              <DashboardSidebar documents={documents} dispatch={dispatch} />
             </div>
           </div>
         )}

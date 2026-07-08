@@ -166,78 +166,95 @@ export async function checkSession(sessionId: string): Promise<boolean> {
  * Stream a chat response using Server-Sent Events.
  * POST /api/chat/stream
  * Calls onToken for each word, onDone with final structured response.
+ *
+ * Returns an AbortController — call controller.abort() to cancel mid-stream.
+ * Always call abort() in your useEffect cleanup to prevent state updates on
+ * unmounted components when the user navigates away during streaming.
  */
-export async function streamChatMessage(
+export function streamChatMessage(
   sessionId: string,
   question: string,
   history: ChatHistoryMessage[],
   onToken: (text: string) => void,
   onDone: (response: ChatResponse) => void,
   onError: (error: string) => void,
-): Promise<void> {
+): { abort: () => void; promise: Promise<void> } {
+  const controller = new AbortController();
   const url = `${API_BASE_URL}/api/chat/stream`;
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, question, history }),
-    });
-  } catch (e) {
-    onError(e instanceof Error ? e.message : 'Network error');
-    return;
-  }
+  const promise = (async (): Promise<void> => {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, question, history }),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') return; // intentional cancel
+      onError(e instanceof Error ? e.message : 'Network error');
+      return;
+    }
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Stream failed' }));
-    onError(err.error ?? `Stream failed: ${response.status}`);
-    return;
-  }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Stream failed' }));
+      onError(err.error ?? `Stream failed: ${response.status}`);
+      return;
+    }
 
-  const reader = response.body?.getReader();
-  if (!reader) { onError('No response body'); return; }
+    const reader = response.body?.getReader();
+    if (!reader) { onError('No response body'); return; }
 
-  const decoder = new TextDecoder();
-  let buffer = '';
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (!raw) continue;
+    while (true) {
+      let done: boolean, value: Uint8Array | undefined;
       try {
-        const event = JSON.parse(raw) as {
-          type: string; text?: string; error?: string; code?: string;
-          messageId?: string; role?: string;
-          structuredResponse?: ChatResponse['structuredResponse'];
-          processingTimeMs?: number;
-        };
+        ({ done, value } = await reader.read());
+      } catch (e) {
+        if ((e as Error)?.name === 'AbortError') return; // intentional cancel
+        break;
+      }
+      if (done) break;
 
-        if (event.type === 'token' && event.text) {
-          onToken(event.text);
-        } else if (event.type === 'done') {
-          onDone({
-            messageId: event.messageId ?? '',
-            role: event.role ?? 'assistant',
-            structuredResponse: event.structuredResponse!,
-            processingTimeMs: event.processingTimeMs ?? 0,
-          });
-        } else if (event.type === 'error') {
-          onError(event.error ?? 'Unknown error');
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+        try {
+          const event = JSON.parse(raw) as {
+            type: string; text?: string; error?: string; code?: string;
+            messageId?: string; role?: string;
+            structuredResponse?: ChatResponse['structuredResponse'];
+            processingTimeMs?: number;
+          };
+
+          if (event.type === 'token' && event.text) {
+            onToken(event.text);
+          } else if (event.type === 'done') {
+            onDone({
+              messageId: event.messageId ?? '',
+              role: event.role ?? 'assistant',
+              structuredResponse: event.structuredResponse!,
+              processingTimeMs: event.processingTimeMs ?? 0,
+            });
+          } else if (event.type === 'error') {
+            onError(event.error ?? 'Unknown error');
+          }
+        } catch {
+          // skip malformed lines
         }
-      } catch {
-        // skip malformed lines
       }
     }
-  }
+  })();
+
+  return { abort: () => controller.abort(), promise };
 }
 
 /**

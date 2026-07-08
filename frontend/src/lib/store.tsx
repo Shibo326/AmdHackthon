@@ -5,7 +5,10 @@ import {
   type Dispatch,
   type ReactNode,
 } from 'react';
-import type { Analysis, UploadedDocument } from './types';
+import type { Analysis, PersistedChatMessage, UploadedDocument } from './types';
+
+// Max messages to retain in localStorage (prevents bloat on long conversations)
+const MAX_PERSISTED_MESSAGES = 100;
 
 // The demo session ID used by the backend demo endpoint
 export const DEMO_SESSION_ID = 'demo-session-amd-mi300x-2026';
@@ -18,6 +21,8 @@ export interface AppState {
   sessionId: string | null;
   documents: UploadedDocument[];
   analysis: Analysis | null;
+  /** Persisted chat history — survives navigation and page refresh */
+  messages: PersistedChatMessage[];
   isLoading: boolean;
   error: string | null;
   isDemo: boolean;
@@ -27,6 +32,7 @@ const initialState: AppState = {
   sessionId: null,
   documents: [],
   analysis: null,
+  messages: [],
   isLoading: false,
   error: null,
   isDemo: false,
@@ -44,6 +50,7 @@ function loadPersistedState(): AppState {
       sessionId: saved.sessionId ?? null,
       documents: saved.documents ?? [],
       analysis: saved.analysis ?? null,
+      messages: saved.messages ?? [],
       isLoading: false,
       error: null,
       isDemo: saved.sessionId === DEMO_SESSION_ID,
@@ -59,10 +66,13 @@ function persistState(state: AppState): void {
       localStorage.removeItem(STORAGE_KEY);
       return;
     }
+    // Cap messages to last MAX_PERSISTED_MESSAGES to prevent localStorage bloat
+    const messagesToPersist = state.messages.slice(-MAX_PERSISTED_MESSAGES);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       sessionId: state.sessionId,
       documents: state.documents,
       analysis: state.analysis,
+      messages: messagesToPersist,
     }));
   } catch {
     // ignore storage errors
@@ -77,6 +87,8 @@ export type AppAction =
   | { type: 'SET_ANALYSIS'; payload: Analysis }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'ADD_MESSAGE'; payload: PersistedChatMessage }
+  | { type: 'CLEAR_MESSAGES' }
   | { type: 'RESET' };
 
 // ── Reducer ────────────────────────────────────────────────────────────────────
@@ -87,7 +99,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_SESSION': {
       const isDemo = action.payload === DEMO_SESSION_ID;
-      newState = { ...state, sessionId: action.payload, isDemo };
+      // Clear messages when a new session starts (fresh upload)
+      const messagesForNewSession =
+        state.sessionId && state.sessionId !== action.payload ? [] : state.messages;
+      newState = { ...state, sessionId: action.payload, isDemo, messages: messagesForNewSession };
       break;
     }
     case 'SET_DOCUMENTS':
@@ -101,6 +116,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
       break;
     case 'SET_ERROR':
       newState = { ...state, error: action.payload };
+      break;
+    case 'ADD_MESSAGE':
+      newState = { ...state, messages: [...state.messages, action.payload] };
+      break;
+    case 'CLEAR_MESSAGES':
+      newState = { ...state, messages: [] };
       break;
     case 'RESET':
       newState = { ...initialState };

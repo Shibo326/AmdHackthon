@@ -102,49 +102,57 @@ class AnalysisService:
         else:
             logger.warning("[DEBUG] NO CHUNKS available for analysis!")
 
-        # Run LLM calls in two batches to avoid rate limiting on free-tier APIs
-        # Batch 1: summary, risks, suggested questions (lighter calls)
-        (
-            summary_result,
-            risks_result,
-            suggested_questions,
-        ) = await asyncio.gather(
-            self._generate_summary(system_prompt, chunks),
-            self._generate_risks(system_prompt, chunks),
-            self._generate_suggested_questions(chunks),
-            return_exceptions=True,
-        )
+        # Run LLM calls sequentially to respect Groq free-tier rate limits
+        # (12,000 tokens/minute). Sequential calls with small delays prevent 429s.
+        # Conflict detection runs first as it's independent and caches results.
 
-        # Small delay between batches (reduced for Fireworks AI — no strict rate limit)
-        await asyncio.sleep(0.1)
-
-        # Batch 2: matrix, recommendation, conflicts (heavier calls)
-        (
-            matrix_result,
-            recommendation_result,
-            conflicts,
-        ) = await asyncio.gather(
-            self._generate_comparison_matrix(system_prompt, chunks, doc_names),
-            self._generate_recommendation(system_prompt, chunks),
-            self.conflict_engine.detect(chunks, doc_names),
-            return_exceptions=True,
-        )
-
-        # Check for exceptions in parallel results
-        if isinstance(summary_result, Exception):
-            raise LLMParseError(f"Summary generation failed: {summary_result}") from summary_result
-        if isinstance(risks_result, Exception):
-            raise LLMParseError(f"Risk analysis failed: {risks_result}") from risks_result
-        if isinstance(matrix_result, Exception):
-            logger.warning(f"Comparison matrix failed, using empty: {matrix_result}")
-            matrix_result = []
-        if isinstance(recommendation_result, Exception):
-            raise LLMParseError(f"Recommendation failed: {recommendation_result}") from recommendation_result
-        if isinstance(conflicts, Exception):
-            logger.warning(f"Conflict detection failed, using empty: {conflicts}")
+        # Step 1 — Conflict detection (uses its own sequential loop internally)
+        try:
+            conflicts = await self.conflict_engine.detect(chunks, doc_names)
+        except Exception as e:
+            logger.warning(f"Conflict detection failed, using empty: {e}")
             conflicts = []
-        if isinstance(suggested_questions, Exception):
-            logger.warning(f"Suggested questions failed, using empty: {suggested_questions}")
+
+        await asyncio.sleep(1.0)
+
+        # Step 2 — Executive summary
+        try:
+            summary_result = await self._generate_summary(system_prompt, chunks)
+        except Exception as e:
+            raise LLMParseError(f"Summary generation failed: {e}") from e
+
+        await asyncio.sleep(1.5)
+
+        # Step 3 — Risk analysis
+        try:
+            risks_result = await self._generate_risks(system_prompt, chunks)
+        except Exception as e:
+            raise LLMParseError(f"Risk analysis failed: {e}") from e
+
+        await asyncio.sleep(1.5)
+
+        # Step 4 — Comparison matrix (non-fatal — soft fail)
+        try:
+            matrix_result = await self._generate_comparison_matrix(system_prompt, chunks, doc_names)
+        except Exception as e:
+            logger.warning(f"Comparison matrix failed, using empty: {e}")
+            matrix_result = []
+
+        await asyncio.sleep(1.5)
+
+        # Step 5 — Recommendation
+        try:
+            recommendation_result = await self._generate_recommendation(system_prompt, chunks)
+        except Exception as e:
+            raise LLMParseError(f"Recommendation failed: {e}") from e
+
+        await asyncio.sleep(1.0)
+
+        # Step 6 — Suggested questions (non-fatal — soft fail)
+        try:
+            suggested_questions = await self._generate_suggested_questions(chunks)
+        except Exception as e:
+            logger.warning(f"Suggested questions failed, using empty: {e}")
             suggested_questions = []
 
         analysis = AnalysisResult(

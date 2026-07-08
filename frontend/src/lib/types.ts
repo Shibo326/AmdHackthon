@@ -88,6 +88,26 @@ export interface PreSeededMessage {
   structuredResponse?: StructuredAIResponse;
 }
 
+// ── Persisted chat message types ──────────────────────────────────────────────
+// These mirror the local types in Chat.tsx but are exported so they can be
+// stored in AppState and persisted to localStorage.
+
+export interface UserChatMessage {
+  id: string;
+  role: 'user';
+  content: string;
+  timestamp: string;
+}
+
+export interface AssistantChatMessage {
+  id: string;
+  role: 'assistant';
+  structuredResponse: StructuredAIResponse;
+  timestamp: string;
+}
+
+export type PersistedChatMessage = UserChatMessage | AssistantChatMessage;
+
 export interface DemoResponse {
   sessionId: string;
   documents: UploadedDocument[];

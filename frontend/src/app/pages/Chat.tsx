@@ -13,9 +13,9 @@ import {
   X,
 } from "lucide-react";
 import { streamChatMessage, getSuggestedQuestions } from "../../lib/api";
-import { useAppState } from "../../lib/store";
+import { useAppState, useAppDispatch } from "../../lib/store";
 import { Link } from "react-router";
-import type { StructuredAIResponse } from "../../lib/types";
+import type { StructuredAIResponse, UserChatMessage, AssistantChatMessage, PersistedChatMessage, UploadedDocument } from "../../lib/types";
 
 const fallbackQuestions = [
   "Summarize this document",
@@ -26,26 +26,98 @@ const fallbackQuestions = [
   "Compare the options",
 ];
 
-interface UserMessage {
-  id: string;
-  role: "user";
-  content: string;
-  timestamp: string;
+// Re-export local type aliases for component readability
+type UserMessage = UserChatMessage;
+type AssistantMessage = AssistantChatMessage;
+type ChatMessage = PersistedChatMessage;
+
+// ── ChatSidebar ─────────────────────────────────────────────────────────────
+// Extracted outside Chat component to prevent remount on every parent re-render.
+interface ChatSidebarProps {
+  documents: UploadedDocument[];
+  questionsLoading: boolean;
+  quickQuestions: string[];
+  isThinking: boolean;
+  isStreaming: boolean;
+  onQuestionClick: (q: string) => void;
 }
 
-interface AssistantMessage {
-  id: string;
-  role: "assistant";
-  structuredResponse: StructuredAIResponse;
-  timestamp: string;
-}
+function ChatSidebar({
+  documents,
+  questionsLoading,
+  quickQuestions,
+  isThinking,
+  isStreaming,
+  onQuestionClick,
+}: ChatSidebarProps) {
+  return (
+    <>
+      <div className="p-4">
+        <h3 style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", fontWeight: 500, color: "var(--ghost)", marginBottom: "12px" }}>
+          Active Documents
+        </h3>
+        <div className="space-y-2">
+          {documents.map((doc) => {
+            const isImage = doc.fileType === "image";
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
+                style={{ background: "var(--graphite)", border: "1px solid var(--rule)" }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ width: "6px", height: "6px", borderRadius: "50%", background: isImage ? "var(--volt)" : "var(--conflict)", flexShrink: 0 }}
+                />
+                <span className="truncate" style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", fontWeight: 500, color: "var(--ash)" }}>
+                  {doc.filename}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-type ChatMessage = UserMessage | AssistantMessage;
+      <div style={{ height: "1px", background: "var(--rule)", margin: "8px 0" }} />
+
+      <div className="px-4 pb-4">
+        <div className="mb-3 flex items-center gap-2" style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>
+          <Sparkles size={12} style={{ color: "var(--ghost)" }} />
+          QUICK QUESTIONS
+        </div>
+        <div className="flex flex-col gap-2">
+          {questionsLoading ? (
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="animate-dot-1 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+              <div className="animate-dot-2 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+              <div className="animate-dot-3 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>Generating…</span>
+            </div>
+          ) : (
+            quickQuestions.map((q, idx) => (
+              <button
+                key={idx}
+                className="w-full px-3 py-2 rounded-lg border text-left transition-all"
+                style={{ background: "var(--lead)", borderColor: "var(--rule)", borderRadius: "var(--radius-btn)", fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: "13px", color: "var(--ash)", cursor: "pointer" }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; e.currentTarget.style.color = "var(--paper)"; e.currentTarget.style.background = "var(--volt-dim)"; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; e.currentTarget.style.color = "var(--ash)"; e.currentTarget.style.background = "var(--lead)"; }}
+                onClick={() => { void onQuestionClick(q); }}
+                disabled={isThinking || isStreaming}
+              >
+                {q}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function Chat() {
-  const { sessionId, documents, analysis } = useAppState();
+  const { sessionId, documents, analysis, messages } = useAppState();
+  const dispatch = useAppDispatch();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [quickQuestions, setQuickQuestions] = useState<string[]>([]);
@@ -57,6 +129,8 @@ export default function Chat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // AbortController ref for cleaning up in-flight streaming requests on unmount
+  const abortControllerRef = useRef<{ abort: () => void } | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -78,6 +152,14 @@ export default function Chat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  // Abort any in-flight stream when the component unmounts (user navigates away)
+  // This prevents React "state update on unmounted component" warnings
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   if (!sessionId) {
     return (
@@ -104,7 +186,7 @@ export default function Chat() {
     if (!trimmed || isThinking || !sessionId) return;
 
     const userMsg: UserMessage = { id: `u-${Date.now()}`, role: "user", content: trimmed, timestamp: new Date().toISOString() };
-    setMessages((prev) => [...prev, userMsg]);
+    dispatch({ type: "ADD_MESSAGE", payload: userMsg });
     setInputValue("");
     setIsThinking(true);
     setStreamingAnswer("");
@@ -123,7 +205,7 @@ export default function Chat() {
       setIsStreaming(true);
       setIsThinking(false);
 
-      await streamChatMessage(
+      const { abort, promise } = streamChatMessage(
         sessionId,
         trimmed,
         historyForAPI,
@@ -140,7 +222,7 @@ export default function Chat() {
             structuredResponse: response.structuredResponse,
             timestamp: new Date().toISOString(),
           };
-          setMessages((prev) => [...prev, assistantMsg]);
+          dispatch({ type: "ADD_MESSAGE", payload: assistantMsg });
         },
         (error) => {
           setIsStreaming(false);
@@ -160,9 +242,12 @@ export default function Chat() {
             },
             timestamp: new Date().toISOString(),
           };
-          setMessages((prev) => [...prev, errMsg]);
+          dispatch({ type: "ADD_MESSAGE", payload: errMsg });
         },
       );
+      // Store the abort function so the unmount cleanup can cancel mid-stream
+      abortControllerRef.current = { abort };
+      await promise;
     } catch (err) {
       setIsStreaming(false);
       setStreamingAnswer("");
@@ -178,7 +263,7 @@ export default function Chat() {
         },
         timestamp: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, errMsg]);
+      dispatch({ type: "ADD_MESSAGE", payload: errMsg });
     } finally {
       setIsThinking(false);
       inputRef.current?.focus();
@@ -218,72 +303,6 @@ export default function Chat() {
 
   const docCount = documents.length;
 
-  const SidebarContent = () => (
-    <>
-      <div className="p-4">
-        <h3 style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", fontWeight: 500, color: "var(--ghost)", marginBottom: "12px" }}>
-          Active Documents
-        </h3>
-        <div className="space-y-2">
-          {documents.map((doc) => {
-            const isImage = doc.fileType === "image";
-            return (
-              <div
-                key={doc.id}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
-                style={{ background: "var(--graphite)", border: "1px solid var(--rule)" }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{ width: "6px", height: "6px", borderRadius: "50%", background: isImage ? "var(--volt)" : "var(--conflict)", flexShrink: 0 }}
-                />
-                <span
-                  className="truncate"
-                  style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", fontWeight: 500, color: "var(--ash)" }}
-                >
-                  {doc.filename}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ height: "1px", background: "var(--rule)", margin: "8px 0" }} />
-
-      <div className="px-4 pb-4">
-        <div className="mb-3 flex items-center gap-2" style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>
-          <Sparkles size={12} style={{ color: "var(--ghost)" }} />
-          QUICK QUESTIONS
-        </div>
-        <div className="flex flex-col gap-2">
-          {questionsLoading ? (
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="animate-dot-1 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
-              <div className="animate-dot-2 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
-              <div className="animate-dot-3 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>Generating…</span>
-            </div>
-          ) : (
-            quickQuestions.map((q, idx) => (
-              <button
-                key={idx}
-                className="w-full px-3 py-2 rounded-lg border text-left transition-all"
-                style={{ background: "var(--lead)", borderColor: "var(--rule)", borderRadius: "var(--radius-btn)", fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: "13px", color: "var(--ash)", cursor: "pointer" }}
-                onMouseOver={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; e.currentTarget.style.color = "var(--paper)"; e.currentTarget.style.background = "var(--volt-dim)"; }}
-                onMouseOut={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; e.currentTarget.style.color = "var(--ash)"; e.currentTarget.style.background = "var(--lead)"; }}
-                onClick={() => { void handleSubmit(q); }}
-                disabled={isThinking || isStreaming}
-              >
-                {q}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </>
-  );
-
   return (
     <div className="flex flex-col" style={{ height: "100dvh", background: "var(--ink)" }}>
       <NavigationBar showDemo={false} />
@@ -294,7 +313,14 @@ export default function Chat() {
           className="hidden md:flex flex-col shrink-0"
           style={{ width: "280px", background: "var(--lead)", borderRight: "1px solid var(--rule)", overflowY: "auto" }}
         >
-          <SidebarContent />
+          <ChatSidebar
+            documents={documents}
+            questionsLoading={questionsLoading}
+            quickQuestions={quickQuestions}
+            isThinking={isThinking}
+            isStreaming={isStreaming}
+            onQuestionClick={handleSubmit}
+          />
         </div>
 
         {/* Mobile sidebar drawer */}
@@ -311,7 +337,14 @@ export default function Chat() {
                   <X size={18} />
                 </button>
               </div>
-              <SidebarContent />
+              <ChatSidebar
+                documents={documents}
+                questionsLoading={questionsLoading}
+                quickQuestions={quickQuestions}
+                isThinking={isThinking}
+                isStreaming={isStreaming}
+                onQuestionClick={handleSubmit}
+              />
             </div>
           </div>
         )}
