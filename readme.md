@@ -10,32 +10,150 @@
 
 ---
 
-## What is Clausify?
+## 🚀 Quick Start (Para sa mga Teammates)
 
-Clausify AI reads multiple business documents simultaneously, detects conflicts and contradictions across them, and provides evidence-cited answers to any question — all powered by AMD hardware.
+### Prerequisites
 
-**The problem:** Procurement teams spend hours cross-referencing contracts, invoices, and quotations. They miss overcharges, conflicting terms, and expired deadlines.
+- **Node.js 20+** (for frontend)
+- **Python 3.11+** (for backend)
+- **Git** (obviously)
+- **Fireworks AI API Key** — get one at https://app.fireworks.ai/settings/api-keys
 
-**Our solution:** Upload your documents. Clausify finds the $3,300 overcharge your team missed, flags the expired contract deadline, and recommends the best supplier — with exact source citations for every claim.
+### Step 1: Clone and Setup
+
+```bash
+git clone https://github.com/your-username/AmdHackthon-main.git
+cd AmdHackthon-main
+```
+
+### Step 2: Backend Setup
+
+```bash
+cd backend
+cp .env.example .env
+# EDIT .env — paste your FIREWORKS_API_KEY (kuhanin kay Rhen)
+
+# Create virtual environment (recommended)
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the backend
+uvicorn main:app --reload --port 8000
+```
+
+Backend runs at: **http://localhost:8000**
+API Docs at: **http://localhost:8000/docs**
+
+### Step 3: Frontend Setup (new terminal)
+
+```bash
+cd frontend
+cp .env.example .env
+# .env should have: VITE_API_URL=http://localhost:8000
+
+# Install dependencies
+npm install
+
+# Run the frontend
+npm run dev
+```
+
+Frontend runs at: **http://localhost:5173**
+
+### Step 4: Test It
+
+1. Open http://localhost:5173
+2. Go to `/demo` — should show pre-loaded contracts with analysis
+3. Try uploading a PDF on the landing page
+4. Check `/chat` after analysis completes
+
+### Alternative: Docker (one command, everything runs)
+
+```bash
+# From project root
+cp backend/.env.example backend/.env
+# Edit backend/.env — add FIREWORKS_API_KEY
+
+docker compose up --build
+```
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+- Demo: http://localhost:3000/demo
 
 ---
 
-## AMD Integration
+## 📋 Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FIREWORKS_API_KEY` | **Yes** | — | Fireworks AI API key (runs on AMD MI300X) |
+| `FIREWORKS_MODEL` | No | `accounts/fireworks/models/deepseek-v4-pro` | Model to use |
+| `FIREWORKS_ENDPOINT` | No | `https://api.fireworks.ai/inference/v1` | API endpoint |
+| `ALLOWED_ORIGINS` | No | `*` | CORS origins (comma-separated) |
+| `PORT` | No | `8000` | Server port |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8000` | Backend API URL |
+
+> ⚠️ **NEVER commit `.env` files.** They're in `.gitignore`. Use `.env.example` as reference.
+
+---
+
+## 🏗️ What is Clausify?
+
+Clausify AI reads multiple business documents simultaneously, detects conflicts and contradictions across them, and provides evidence-cited answers — all powered by AMD MI300X hardware.
+
+**The problem:** Procurement teams spend 4-6 hours cross-referencing contracts, invoices, and quotations. They miss overcharges, conflicting terms, and expired deadlines.
+
+**Our solution:** Upload documents → AI detects the $3,300 overcharge, flags the expired deadline, recommends the best supplier — with exact source citations for every claim.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + TypeScript + Vite 6 + Tailwind CSS 4 |
+| Routing | React Router 7 |
+| State | React Context + useReducer (persisted to localStorage) |
+| Animations | Framer Motion |
+| Icons | Lucide React |
+| Toasts | Sonner |
+| Charts | Recharts |
+| Backend | Python 3.11 + FastAPI + Uvicorn |
+| Vector DB | ChromaDB (persistent, per-session) |
+| Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim) |
+| LLM | Fireworks AI → DeepSeek V4 Pro on AMD MI300X |
+| PDF Export | ReportLab |
+| DOCX Export | python-docx |
+| OCR | PyMuPDF + pytesseract + Pillow |
+| Rate Limiting | slowapi |
+| Deployment | Docker / Railway (backend) + Vercel (frontend) |
+
+---
+
+## 🔌 AMD Integration
 
 | Layer | Technology | Hardware |
 |-------|-----------|----------|
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | AMD Instinct MI300X via ROCm |
 | LLM Inference | DeepSeek V4 Pro | Fireworks AI on AMD Instinct MI300X |
-| Dev/Testing | Llama 3.3 70B Versatile | Groq on AMD MI300X |
 
-- `LLM_PROVIDER=AMD` → for production demo (Fireworks AI on AMD MI300X)
-- `LLM_PROVIDER=GROQ` → for development and testing (free, fast)
-
-Switch between them with a single env var. No code changes needed.
+All LLM inference runs on AMD Instinct MI300X hardware via Fireworks AI.
+The system auto-detects AMD ROCm for local embedding GPU acceleration.
 
 ---
 
-## Features
+## ✨ Features
 
 - 📄 Multi-document upload (PDF, PNG, JPG, JPEG) — up to 10 files, 10MB each
 - 🔍 OCR for scanned invoices and images (pytesseract + PyMuPDF)
@@ -43,241 +161,325 @@ Switch between them with a single env var. No code changes needed.
 - 📊 Executive summary, risk analysis, supplier comparison matrix, recommendation
 - 💬 Decision Copilot chat with SSE streaming responses
 - 📎 Evidence-cited structured answers (Answer → Evidence → Risk → Recommendation)
-- 📥 PDF & DOCX report export with analytics dashboard (ReportLab + python-docx)
-- 🎯 Pre-loaded demo mode (judges can try instantly, zero upload needed)
+- 📥 PDF & DOCX report export with analytics dashboard
+- 🎯 Pre-loaded demo mode (zero upload needed)
 - 🐳 Fully containerized (Docker + Docker Compose)
+- 📱 Mobile responsive (all 4 pages)
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18 + TypeScript + Vite 6 + Tailwind CSS 4 |
-| Routing | React Router 7 |
-| State | React Context + useReducer (persisted to localStorage) |
-| Icons | Lucide React |
-| Toasts | Sonner |
-| Backend | Python 3.11 + FastAPI + Uvicorn |
-| Vector DB | ChromaDB (persistent, per-session collections) |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim) |
-| LLM | Groq SDK / Anthropic SDK / AMD Developer Cloud (httpx) |
-| PDF Export | ReportLab |
-| OCR | PyMuPDF + pytesseract + Pillow |
-| Rate Limiting | slowapi |
-| Deployment | Docker / Railway (backend) + Vercel (frontend) |
-
----
-
-## Quick Start
-
-### Option 1: Docker (Recommended for judges)
-
-```bash
-# Clone the repo
-git clone https://github.com/your-username/AmdHackthon-main.git
-cd AmdHackthon-main
-
-# Create backend env file
-cp backend/.env.example backend/.env
-# Edit backend/.env — add your GROQ_API_KEY (or AMD keys)
-
-# Run everything
-docker compose up --build
-```
-
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- Demo (no upload needed): http://localhost:3000/demo
-
-### Option 2: Local Development
-
-```bash
-# Backend
-cd backend
-cp .env.example .env
-# Edit .env — add GROQ_API_KEY
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# Frontend (new terminal)
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend runs at http://localhost:5173, backend at http://localhost:8000.
-
----
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `LLM_PROVIDER` | No | `GROQ` | `GROQ`, `CLAUDE`, or `AMD` |
-| `GROQ_API_KEY` | Yes (if GROQ) | — | Get free key at https://console.groq.com |
-| `GROQ_MODEL` | No | `llama-3.3-70b-versatile` | Groq model |
-| `ANTHROPIC_API_KEY` | Yes (if CLAUDE) | — | Anthropic API key |
-| `AMD_CLOUD_API_KEY` | Yes (if AMD) | — | AMD Developer Cloud key |
-| `AMD_CLOUD_ENDPOINT` | Yes (if AMD) | — | AMD API endpoint |
-| `ALLOWED_ORIGINS` | No | `*` | CORS origins |
-| `PORT` | No | `8000` | Server port |
-
-### Frontend (`frontend/.env`)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | `http://localhost:8000` | Backend URL |
-
----
-
-## API Endpoints
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/upload` | Upload documents (multipart/form-data) |
-| GET | `/api/session/{id}/check` | Check if session is still valid |
-| POST | `/api/analyze` | Run full AI analysis on session |
-| POST | `/api/suggest-questions` | Generate contextual quick questions |
-| POST | `/api/chat` | RAG Q&A (JSON response) |
-| POST | `/api/chat/stream` | RAG Q&A (SSE streaming) |
-| POST | `/api/report` | Generate PDF or DOCX report (format param) |
-| GET | `/api/demo` | Pre-loaded demo data |
-| GET | `/health` | Health check |
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 AmdHackthon-main/
-├── docker-compose.yml          # One command to run everything
+├── docker-compose.yml           # One command to run everything
+├── railway.toml                 # Railway deployment config
+│
 ├── backend/
-│   ├── Dockerfile              # Backend container
-│   ├── main.py                 # FastAPI app entry point
-│   ├── requirements.txt        # Python deps
-│   ├── .env.example            # Env var documentation
-│   ├── routers/                # API endpoints (5 routers)
-│   ├── services/               # Business logic (8 services)
-│   ├── models/                 # Pydantic data models
-│   ├── prompts/                # LLM prompt templates (6 prompts)
-│   ├── tests/                  # pytest test suite
-│   └── data/                   # Persisted sessions + ChromaDB
+│   ├── Dockerfile               # Backend container
+│   ├── main.py                  # FastAPI entry point + service wiring
+│   ├── requirements.txt         # Python dependencies
+│   ├── .env.example             # Env var template (copy to .env)
+│   ├── routers/                 # API route handlers
+│   │   ├── upload.py            # POST /api/upload
+│   │   ├── analyze.py           # POST /api/analyze + /api/benchmark
+│   │   ├── chat.py              # POST /api/chat + /api/chat/stream
+│   │   ├── report.py            # POST /api/report (PDF/DOCX)
+│   │   └── demo.py              # GET /api/demo (pre-loaded data)
+│   ├── services/                # Business logic
+│   │   ├── llm_service.py       # Fireworks AI / AMD abstraction
+│   │   ├── analysis_service.py  # 5-parallel-call analysis pipeline
+│   │   ├── conflict_engine.py   # Cross-document contradiction detection
+│   │   ├── embedding_service.py # Text chunking + vector generation
+│   │   ├── vector_store.py      # ChromaDB wrapper
+│   │   ├── session_manager.py   # Session persistence (JSON on disk)
+│   │   ├── document_parser.py   # PDF/image text extraction
+│   │   ├── pdf_generator.py     # ReportLab PDF export
+│   │   └── docx_generator.py    # python-docx DOCX export
+│   ├── models/                  # Pydantic data models
+│   │   ├── document.py          # Chunk, UploadedDocument
+│   │   └── response.py          # All request/response schemas
+│   ├── prompts/                 # LLM prompt templates
+│   │   ├── system_prompt.py     # Master system prompt
+│   │   ├── executive_summary.py # Summary generation
+│   │   ├── risk_analysis.py     # Risk identification
+│   │   ├── recommendation.py    # Action recommendation
+│   │   ├── conflict_detection.py# Pairwise conflict prompt
+│   │   └── chat_copilot.py      # RAG chat prompt
+│   ├── tests/                   # pytest test suite
+│   └── data/                    # Persisted sessions + ChromaDB
+│
 ├── frontend/
-│   ├── Dockerfile              # Frontend container (nginx)
-│   ├── package.json            # Node deps
-│   ├── vite.config.ts          # Vite build config
+│   ├── Dockerfile               # Frontend container (nginx)
+│   ├── vercel.json              # Vercel deployment config
+│   ├── package.json             # Node dependencies
+│   ├── vite.config.ts           # Vite build config
+│   ├── .env.example             # Frontend env template
 │   └── src/
-│       ├── main.tsx            # Entry (ErrorBoundary → AppProvider → App)
+│       ├── main.tsx             # Entry: ErrorBoundary → AppProvider → App
+│       ├── styles/
+│       │   ├── theme.css        # Design system tokens (CSS variables)
+│       │   └── index.css        # Global styles + animations
 │       ├── app/
-│       │   ├── App.tsx         # SessionGuard + Router + Toaster
-│       │   ├── routes.tsx      # Lazy-loaded routes
-│       │   ├── pages/          # Landing, Dashboard, Chat, Demo
-│       │   └── components/     # NavigationBar, Badges, Buttons, etc.
+│       │   ├── App.tsx          # SessionGuard + Router + Toaster
+│       │   ├── routes.tsx       # Lazy-loaded route definitions
+│       │   ├── pages/
+│       │   │   ├── Landing.tsx  # Upload + hero page (route: /)
+│       │   │   ├── Dashboard.tsx# Analysis results (route: /dashboard)
+│       │   │   ├── Chat.tsx     # Decision Copilot (route: /chat)
+│       │   │   └── Demo.tsx     # Pre-loaded demo (route: /demo)
+│       │   └── components/
+│       │       ├── NavigationBar.tsx
+│       │       ├── Badges.tsx   # RiskBadge, EvidenceTag, EvidenceBox
+│       │       ├── Buttons.tsx  # PrimaryButton, GhostButton
+│       │       ├── Card.tsx
+│       │       ├── DocumentStack.tsx # Framer Motion file cards
+│       │       └── ErrorBoundary.tsx
 │       └── lib/
-│           ├── api.ts          # All API calls (fetch-based)
-│           ├── store.tsx       # Context + useReducer state
-│           └── types.ts        # TypeScript interfaces
+│           ├── api.ts           # All API calls (fetch-based)
+│           ├── store.tsx        # Context + useReducer global state
+│           ├── types.ts         # TypeScript interfaces (SOURCE OF TRUTH)
+│           └── sanitize.ts      # Text sanitization utility
+│
+├── sample_documents/            # Demo documents for testing
+│   ├── Demo_Contract_TechCorp.txt
+│   ├── Demo_Invoice_TechCorp.txt
+│   └── Demo_Quotation_TechCorp.txt
+│
 └── .kiro/
-    ├── agents/                 # 7 Kiro sub-agents for development
-    └── specs/                  # UI redesign specification
+    ├── agents/                  # Kiro sub-agents for AI-assisted dev
+    └── specs/                   # UI redesign specification
 ```
 
 ---
 
-## How It Works (Architecture)
+## 🔄 How It Works (Architecture)
 
 ```
-User uploads files
+User uploads files (PDF/PNG/JPG)
     ↓
-DocumentParser extracts text (PyMuPDF + OCR)
+DocumentParser extracts text (PyMuPDF + OCR for images)
     ↓
-EmbeddingService chunks text + generates 384-dim vectors
+EmbeddingService chunks text (600 tokens, 80 overlap) + generates 384-dim vectors
     ↓
-VectorStore saves chunks in ChromaDB (per-session)
+VectorStore saves chunks in ChromaDB (isolated per-session collection)
     ↓
-AnalysisService runs parallel LLM calls:
-  • Executive Summary
-  • Risk Analysis
-  • Comparison Matrix
-  • Conflict Detection (pairwise)
-  • Recommendation
+AnalysisService runs 5 PARALLEL LLM calls:
+  ① Executive Summary + Suggested Questions (merged, saves 1 call)
+  ② Risk Analysis
+  ③ Comparison Matrix
+  ④ Conflict Detection (1 consolidated call for ALL docs)
+  ⑤ Recommendation
     ↓
-Dashboard displays results
+Dashboard displays results (cards, charts, conflict banner)
     ↓
-Chat uses RAG: embed question → vector search → LLM with context → structured response
+Chat uses RAG: embed question → top-12 vector search → LLM with context
+    → structured response (Answer / Evidence / Risk / Recommendation)
+    ↓
+Export: PDF or DOCX report with analytics dashboard
 ```
 
 ---
 
-## For Teammates / AI Assistants
+## 🔗 API Endpoints
 
-If you're a teammate (or an AI helping a teammate), here's what you need to know:
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/upload` | Upload documents (multipart/form-data) |
+| `GET` | `/api/session/{id}/check` | Check if session is still valid |
+| `POST` | `/api/analyze` | Run full AI analysis on session |
+| `POST` | `/api/suggest-questions` | Generate contextual quick questions |
+| `POST` | `/api/benchmark` | Benchmark embedding performance |
+| `POST` | `/api/chat` | RAG Q&A (JSON response) |
+| `POST` | `/api/chat/stream` | RAG Q&A (SSE streaming) |
+| `POST` | `/api/report` | Generate PDF/DOCX report |
+| `GET` | `/api/provider-info` | Current LLM provider config |
+| `GET` | `/api/demo` | Pre-loaded demo data |
+| `GET` | `/health` | Health check |
 
-### Rules
-- **Never break existing API contracts** — `frontend/src/lib/types.ts` defines the exact shapes
-- **Never modify** `api.ts`, `store.tsx`, or `types.ts` without discussing first
-- **Use `LLM_PROVIDER=GROQ` for all testing** — AMD credits are for demo day only
-- **State management is Context + useReducer** (NOT Redux, NOT Zustand)
-- **Routing is React Router 7** (NOT Next.js)
-- **Icons are Lucide React** (NOT Material Symbols)
+Full interactive API docs: http://localhost:8000/docs
 
-### Key Files to Read First
-1. `backend/main.py` — how services are wired together
-2. `backend/services/llm_service.py` — LLM provider abstraction
-3. `frontend/src/lib/api.ts` — all API calls
-4. `frontend/src/lib/store.tsx` — global state shape
-5. `frontend/src/lib/types.ts` — TypeScript interfaces (source of truth)
+---
 
-### Running Tests
+## 👨‍💻 For Teammates / AI Agents
+
+> **READ THIS SECTION FIRST** if you're working on the codebase or if an AI agent
+> is helping you. This is the source of truth for how the system is structured.
+
+### 🚫 Rules (Do NOT break these)
+
+1. **Never break existing API contracts** — `frontend/src/lib/types.ts` defines exact shapes
+2. **Never modify** `api.ts`, `store.tsx`, or `types.ts` without team discussion
+3. **Use `FIREWORKS_API_KEY` for all testing** — same provider for dev and production
+4. **State management is Context + useReducer** (NOT Redux, NOT Zustand)
+5. **Routing is React Router 7** (NOT Next.js, NOT react-router-dom)
+6. **Icons are Lucide React** (NOT Material Symbols, NOT Heroicons)
+7. **Animation library is `framer-motion`** (also exported as `motion` package)
+8. **Toast notifications use `sonner`** (NOT react-toastify)
+9. **CSS is Tailwind 4** with custom CSS variables in `theme.css`
+
+### 📖 Key Files to Read First
+
+**Backend (understand the wiring):**
+1. `backend/main.py` — how services are initialized and injected into routers
+2. `backend/services/llm_service.py` — LLM provider abstraction (Fireworks/AMD)
+3. `backend/services/analysis_service.py` — the 5-parallel-call analysis pipeline
+4. `backend/models/response.py` — all Pydantic schemas (must match frontend types)
+
+**Frontend (understand the data flow):**
+1. `frontend/src/lib/types.ts` — TypeScript interfaces (**source of truth**)
+2. `frontend/src/lib/api.ts` — all API calls (fetch-based, no axios)
+3. `frontend/src/lib/store.tsx` — global state shape + actions
+4. `frontend/src/app/App.tsx` — SessionGuard + routing + toast setup
+
+### 🧪 Running Tests
+
 ```bash
 cd backend
-# Forces GROQ provider — never uses AMD credits
-LLM_PROVIDER=GROQ pytest tests/ -v
+pip install -r requirements.txt   # if not done yet
+pytest tests/ -v
 ```
 
-### Kiro Agents Available
-There are 7 specialized agents in `.kiro/agents/` for automated development:
-1. `clausify-ui-redesign` — Apply new design system
-2. `clausify-frontend-integration` — Verify API wiring, add toasts/shortcuts
-3. `clausify-backend-hardening` — Production-grade improvements
-4. `clausify-testing` — Full test suite (GROQ only)
+### 🏃 Running Backend Only
+
+```bash
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+### 🏃 Running Frontend Only
+
+```bash
+cd frontend
+npm install    # first time only
+npm run dev
+```
+
+### 🔧 Frontend Build (production)
+
+```bash
+cd frontend
+npm run build    # outputs to frontend/dist/
+```
+
+---
+
+## 🚢 Deployment
+
+### Backend → Railway
+
+1. Connect GitHub repo to Railway
+2. Set environment variables in Railway dashboard:
+   - `FIREWORKS_API_KEY` (required)
+   - `FIREWORKS_MODEL` (optional, has default)
+   - `FIREWORKS_ENDPOINT` (optional, has default)
+   - `ALLOWED_ORIGINS` = your Vercel frontend URL
+3. Railway auto-deploys from `railway.toml` config
+
+### Frontend → Vercel
+
+1. Connect GitHub repo to Vercel
+2. Set root directory to `frontend`
+3. Set environment variable: `VITE_API_URL` = your Railway backend URL
+4. Vercel auto-deploys from `frontend/vercel.json` config
+
+### Docker (local or self-hosted)
+
+```bash
+cp backend/.env.example backend/.env
+# Edit .env with your FIREWORKS_API_KEY
+docker compose up --build
+```
+
+---
+
+## 🎮 Demo for Judges / Presentation
+
+1. **Zero-upload demo:** Visit `/demo` — 5 pre-loaded procurement docs, full analysis, pre-seeded chat
+2. **Upload flow:** Drop PDFs on `/` → analysis in ~60s → dashboard with conflicts highlighted
+3. **Chat:** Ask "Which supplier is safest?" → streaming response with evidence citations
+4. **Export:** Click export dropdown → choose PDF or DOCX → download professional report
+
+### Demo Script (3.5 minutes)
+
+| Step | Time | Action |
+|------|------|--------|
+| 1. Hook | 30s | Open `/demo`, show conflict banner + pre-loaded analysis |
+| 2. Upload | 45s | Go to `/`, drag-drop PDFs, click Analyze, show AMD processing |
+| 3. Dashboard | 60s | Show executive summary, risks, comparison matrix, export PDF |
+| 4. Chat | 60s | Ask questions, show streaming + evidence citations |
+| 5. AMD | 15s | Point to AMD badge, mention MI300X hardware, say thank you |
+
+---
+
+## 🔀 Git Workflow (Para sa Team)
+
+```bash
+# Always pull latest before working
+git checkout dev-1
+git pull origin dev-1
+
+# Create your feature branch
+git checkout -b feature/your-feature-name
+
+# Work on your changes...
+# When done:
+git add .
+git commit -m "feat: describe what you did"
+git push -u origin feature/your-feature-name
+
+# Then create a Pull Request to dev-1 on GitHub
+```
+
+### Branch Strategy
+- `main` — production ready, deployed
+- `dev-1` — development integration branch (merge PRs here)
+- `feature/*` — individual feature branches
+
+---
+
+## 🤖 AI Agent Instructions
+
+> This section is for AI coding assistants (Kiro, Cursor, Copilot, etc.)
+> reading this repo for the first time.
+
+### How to Run the Full System
+
+1. **Backend**: `cd backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8000`
+2. **Frontend**: `cd frontend && npm install && npm run dev`
+3. **Both need**: `backend/.env` with valid `FIREWORKS_API_KEY`
+
+### Architecture Summary
+
+- **Monorepo**: `/backend` (Python/FastAPI) + `/frontend` (React/Vite)
+- **State**: Frontend uses React Context + useReducer, persisted to localStorage
+- **API**: REST + SSE streaming. All types defined in `frontend/src/lib/types.ts`
+- **LLM**: All calls go through `backend/services/llm_service.py` → Fireworks AI
+- **Vector Search**: ChromaDB with per-session collections, 384-dim embeddings
+- **Sessions**: JSON files on disk (`backend/data/sessions/`), loaded on startup
+
+### Key Constraints
+
+- TypeScript types in `frontend/src/lib/types.ts` are the contract between frontend and backend
+- Backend response models in `backend/models/response.py` MUST match those types exactly
+- Services are injected into routers at startup (see `main.py` `startup_event()`)
+- The frontend uses `fetch()` directly — no axios, no tanstack-query
+- Rate limiting: 60/min global, 5/min for `/api/analyze`, 10/min for `/api/suggest-questions`
+
+### Available Kiro Agents (.kiro/agents/)
+
+7 specialized agents for automated development tasks:
+1. `clausify-ui-redesign` — Design system token application
+2. `clausify-frontend-integration` — API wiring + toast notifications
+3. `clausify-backend-hardening` — Production improvements
+4. `clausify-testing` — Full test suite
 5. `clausify-performance` — Speed optimization
 6. `clausify-deployment` — Railway + Vercel configs
 7. `clausify-demo-validator` — Final pre-submission validation
 
-Run them sequentially: 1 → 2 → 3 → 4 → 5 → 6 → 7
-
 ---
 
-## Switching to AMD (Demo Day)
-
-```bash
-# In backend/.env, change:
-LLM_PROVIDER=AMD
-AMD_CLOUD_API_KEY=<your-key>
-AMD_CLOUD_ENDPOINT=<your-endpoint>
-
-# Restart backend — that's it
-```
-
-The system auto-detects AMD ROCm for embeddings and routes LLM calls to AMD Developer Cloud.
-
----
-
-## Demo for Judges
-
-1. **Zero-upload demo:** Visit `/demo` — 5 pre-loaded procurement docs, full analysis, pre-seeded chat
-2. **Upload flow:** Drop PDFs on `/` → analysis in ~15s → dashboard with conflicts highlighted
-3. **Chat:** Ask "Which supplier is safest?" → streaming response with evidence citations
-4. **Export:** Click export dropdown → choose PDF or DOCX → download professional report with analytics
-
----
-
-## Team — Clausify AI 🇵🇭
+## 👥 Team — Clausify AI 🇵🇭
 
 Built by **Rhenmart Dela Cruz** and team
 AWS Cloud Club Lead · STI Global City · Taguig, Philippines
@@ -292,7 +494,7 @@ AWS Cloud Club Lead · STI Global City · Taguig, Philippines
 
 ---
 
-## License
+## 📄 License
 
 MIT
 

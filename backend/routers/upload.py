@@ -42,11 +42,11 @@ MIME_TO_FILE_TYPE = {
 }
 
 
-def _err(status: int, message: str, code: str):
-    """Return a flat JSONResponse matching ErrorResponse schema."""
+def _err(status: int, message: str, code: str, suggestion: str = ""):
+    """Return a structured JSONResponse matching ErrorResponse schema."""
     return JSONResponse(
         status_code=status,
-        content={"error": message, "code": code, "details": None},
+        content={"error": message, "code": code, "suggestion": suggestion or None},
     )
 
 
@@ -67,9 +67,9 @@ async def upload_documents(
 
     # --- Validate file count ---
     if len(files) == 0:
-        return _err(400, "At least one file is required.", "FILE_COUNT_EXCEEDED")
+        return _err(400, "At least one file is required.", "TOO_MANY_FILES", "Please select at least one file to upload.")
     if len(files) > MAX_FILE_COUNT:
-        return _err(400, "You can upload up to 10 files at a time.", "FILE_COUNT_EXCEEDED")
+        return _err(400, "You can upload up to 10 files at a time.", "TOO_MANY_FILES", "Please reduce to 10 or fewer files per upload.")
 
     session_id = str(uuid.uuid4())
     uploaded_documents: list[UploadedDocument] = []
@@ -107,13 +107,14 @@ async def upload_documents(
         if mime_type not in ACCEPTED_MIME_TYPES:
             return _err(
                 400,
-                f"Unsupported file format: {mime_type}. Accepted formats: PDF, PNG, JPEG.",
-                "UNSUPPORTED_FORMAT",
+                f"Unsupported file format: {mime_type}. Accepted formats: PDF, PNG, JPEG, DOCX.",
+                "INVALID_FILE_TYPE",
+                "Please upload PDF, PNG, JPG, JPEG, or DOCX files only.",
             )
 
         # --- Validate file size ---
         if file_size > MAX_FILE_SIZE:
-            return _err(400, "This file exceeds the 10 MB limit.", "FILE_SIZE_EXCEEDED")
+            return _err(400, "This file exceeds the 10 MB limit.", "FILE_TOO_LARGE", "Please reduce the file size to under 10 MB.")
 
         # --- Process file ---
         try:
@@ -180,7 +181,7 @@ async def upload_documents(
     # --- Check if all files failed ---
     successful = [d for d in uploaded_documents if d.processingStatus == ProcessingStatus.COMPLETED]
     if not successful:
-        return _err(422, "All documents failed to process.", "UPLOAD_FAILED")
+        return _err(422, "All documents failed to process.", "UPLOAD_FAILED", "Check that files are valid and not corrupted, then try again.")
 
     # --- Store chunks in vector store ---
     if all_chunks:
@@ -208,4 +209,4 @@ async def check_session(session_id: str):
         session_manager.get_session(session_id)
         return JSONResponse(content={"valid": True})
     except SessionNotFoundError:
-        return JSONResponse(status_code=404, content={"valid": False, "error": "Session not found.", "code": "SESSION_NOT_FOUND", "details": None})
+        return JSONResponse(status_code=404, content={"valid": False, "error": "Session not found.", "code": "SESSION_NOT_FOUND", "suggestion": "Please upload new documents to start a fresh session."})

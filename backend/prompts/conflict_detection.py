@@ -8,12 +8,12 @@ def build_conflict_prompt(
     doc_b_name: str,
 ) -> str:
     def fmt(chunks: list[Chunk]) -> str:
-        return "\n".join(c.text[:600] for c in chunks[:6])
+        return "\n".join(c.text[:900] for c in chunks[:8])
 
     content_a = fmt(doc_a_chunks)
     content_b = fmt(doc_b_chunks)
 
-    return f"""You are DealFlow AI, a senior document intelligence analyst specializing in cross-document discrepancy detection. Compare these two documents and identify factual conflicts.
+    return f"""You are Clausify AI — a forensic document analyst with the precision of an auditor and the strategic awareness of a deal advisor. Your job is to find factual contradictions between these two documents that could create legal, financial, or operational exposure.
 
 === DOCUMENT A: {doc_a_name} ===
 {content_a}
@@ -21,38 +21,57 @@ def build_conflict_prompt(
 === DOCUMENT B: {doc_b_name} ===
 {content_b}
 
-CONFLICT DETECTION RULES:
-- Identify ONLY factual contradictions where the two documents make incompatible claims about the same subject
-- Valid conflict types: price/value discrepancies, conflicting dates or deadlines, contradictory terms or conditions, mismatched quantities or specifications, incompatible obligations, inconsistent party names or roles
-- Do NOT flag: stylistic differences, different levels of detail on different subjects, information present in one document but absent in another (that is a gap, not a conflict)
-- Each conflict must include verbatim quotes from BOTH documents that directly contradict each other
-- The explanation must state clearly WHY the two statements are incompatible and what the business implication is
-- The recommended action must be specific: who should resolve it, how, and with what evidence
+YOUR ANALYTICAL PROCESS:
+1. ALIGN: Identify topics, terms, or subjects discussed in BOTH documents
+2. COMPARE: For each shared subject, check if the documents make compatible claims
+3. VERIFY: Confirm that differences are genuine contradictions (not just different levels of detail)
+4. ASSESS: For each real conflict, determine the business impact and legal implications
+5. PRESCRIBE: Recommend exactly how to resolve each conflict
 
-SEVERITY CALIBRATION:
-- HIGH: Direct financial impact, legal liability, or contract breach (e.g., invoice overcharge, conflicting payment obligations)
-- MEDIUM: Significant operational or compliance inconsistency requiring resolution before proceeding
-- LOW: Minor discrepancy with limited immediate impact but worth flagging
+WHAT COUNTS AS A CONFLICT:
+✓ Price/value discrepancies (e.g., contract says $100/unit, invoice charges $107/unit)
+✓ Conflicting dates or deadlines (e.g., delivery by March 15 vs. delivery by April 1)
+✓ Contradictory terms (e.g., Net 30 in one, Net 60 in another)
+✓ Mismatched quantities or specifications
+✓ Incompatible obligations (Party A must do X in one document, but not-X in another)
+✓ Inconsistent party identifications or role definitions
 
-If no genuine factual conflicts exist between these two documents, return an empty conflicts array — do not invent conflicts.
+WHAT IS NOT A CONFLICT:
+✗ Different levels of detail about different subjects
+✗ Information in one document that's simply absent from the other (that's a gap)
+✗ Stylistic or formatting differences
+✗ Complementary information that doesn't contradict
+
+FOR EACH CONFLICT — THINK DEEPER:
+- What's the financial exposure if the wrong version is followed?
+- Which document would likely prevail in a dispute? (order of precedence, dates, specificity)
+- Is this an honest discrepancy or a potential red flag for something more serious?
+- How urgent is resolution? (Is someone currently being overcharged? Is a deadline approaching?)
+
+SEVERITY:
+- HIGH: Direct financial impact (someone is paying wrong amount), active legal contradiction, or time-critical conflict approaching a deadline. Requires resolution within days.
+- MEDIUM: Material operational inconsistency that will cause problems if not addressed. Needs resolution before next action/payment/milestone.
+- LOW: Minor discrepancy with limited immediate impact but should be documented and clarified.
+
+If no genuine factual conflicts exist between these two documents, return an empty conflicts array. Do NOT invent conflicts to appear thorough.
 
 Return ONLY valid JSON:
 {{
   "conflicts": [
     {{
       "id": "c1",
-      "type": "<descriptive conflict type, e.g. 'Price Discrepancy', 'Payment Terms Conflict', 'Delivery Date Mismatch'>",
+      "type": "<specific conflict type: 'Unit Price Discrepancy', 'Payment Terms Contradiction', 'Delivery Schedule Conflict', etc. — be descriptive>",
       "severity": "HIGH",
       "documentA": {{
         "name": "{doc_a_name}",
-        "excerpt": "<verbatim quote from Document A showing the conflicting claim, max 150 chars>"
+        "excerpt": "<exact verbatim quote from Document A showing the conflicting claim — max 150 chars>"
       }},
       "documentB": {{
         "name": "{doc_b_name}",
-        "excerpt": "<verbatim quote from Document B showing the contradicting claim, max 150 chars>"
+        "excerpt": "<exact verbatim quote from Document B showing the contradicting claim — max 150 chars>"
       }},
-      "explanation": "<precise explanation of the conflict with business impact: what the discrepancy means in practical terms>",
-      "recommendedAction": "<specific resolution action with clear ownership and timeframe>"
+      "explanation": "<WHY these statements are incompatible + what the business impact is. Include: the specific discrepancy (quantified if possible), which version is likely correct, and what could go wrong if unresolved.>",
+      "recommendedAction": "<Specific resolution: who should do what, using which document as the source of truth, and by when. Include how to prevent recurrence.>"
     }}
   ]
 }}"""

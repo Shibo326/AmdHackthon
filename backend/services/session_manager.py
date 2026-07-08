@@ -167,3 +167,16 @@ class SessionManager:
     def session_exists(self, session_id: str) -> bool:
         """Check whether a session with the given ID exists."""
         return session_id in self.sessions
+
+    def get_cached_analysis(self, session_id: str) -> AnalysisResult | None:
+        """Returns cached analysis result if the session already has one stored."""
+        session = self.get_session(session_id)  # raises SessionNotFoundError if missing
+        return session.analysis  # None if not yet analyzed
+
+    def has_cached_analysis(self, session_id: str) -> bool:
+        """Check if session already has a completed analysis."""
+        try:
+            session = self.get_session(session_id)
+            return session.analysis is not None
+        except Exception:
+            return False

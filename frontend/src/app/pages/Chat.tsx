@@ -11,11 +11,17 @@ import {
   Sparkles,
   PanelLeft,
   X,
+  ArrowLeft,
+  Download,
+  ChevronDown,
+  FileDown,
 } from "lucide-react";
-import { streamChatMessage, getSuggestedQuestions } from "../../lib/api";
+import { streamChatMessage, getSuggestedQuestions, exportReport } from "../../lib/api";
 import { useAppState } from "../../lib/store";
 import { Link } from "react-router";
+import { toast } from "sonner";
 import type { StructuredAIResponse } from "../../lib/types";
+import { sanitizeText } from "../../lib/sanitize";
 
 const fallbackQuestions = [
   "Summarize this document",
@@ -54,9 +60,23 @@ export default function Chat() {
   const [streamingAnswer, setStreamingAnswer] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [sourceModal, setSourceModal] = useState<{ quote: string; source: string; docType: string } | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const downloadRef = useRef<HTMLDivElement>(null);
+
+  // Close download dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
+        setDownloadOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -145,6 +165,7 @@ export default function Chat() {
         (error) => {
           setIsStreaming(false);
           setStreamingAnswer("");
+          toast.error('Message failed to send. Please try again.');
           const errMsg: AssistantMessage = {
             id: `err-${Date.now()}`,
             role: "assistant",
@@ -167,6 +188,7 @@ export default function Chat() {
       setIsStreaming(false);
       setStreamingAnswer("");
       const errorMessage = err instanceof Error ? err.message : "Something went wrong.";
+      toast.error('Message failed to send. Please try again.');
       const errMsg: AssistantMessage = {
         id: `err-${Date.now()}`,
         role: "assistant",
@@ -214,6 +236,33 @@ export default function Chat() {
     a.download = `clausify-chat-${new Date().toISOString().slice(0,10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportReport = async (format: "pdf" | "docx") => {
+    if (!sessionId) return;
+    setIsExporting(true);
+    setDownloadOpen(false);
+    try {
+      const blob = await exportReport(sessionId, format);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `clausify-report.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${format.toUpperCase()} report downloaded!`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Export failed.";
+      toast.error(`Export failed: ${msg}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadChat = () => {
+    handleExportChat();
+    setDownloadOpen(false);
+    toast.success("Chat exported!");
   };
 
   const docCount = documents.length;
@@ -333,6 +382,18 @@ export default function Chat() {
                 <PanelLeft size={18} />
               </button>
 
+              {/* Back to Analysis button */}
+              <Link
+                to="/dashboard"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
+                style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", border: "1px solid var(--rule)", textDecoration: "none", transition: "all 0.15s" }}
+                onMouseOver={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; e.currentTarget.style.color = "var(--paper)"; }}
+                onMouseOut={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; e.currentTarget.style.color = "var(--ghost)"; }}
+              >
+                <ArrowLeft size={13} />
+                Analysis
+              </Link>
+
               {/* Document-icon avatar with pulse ring */}
               <div className="relative shrink-0" style={{ width: "40px", height: "40px" }}>
                 <div
@@ -366,8 +427,106 @@ export default function Chat() {
               </div>
             </div>
 
-            <div className="hidden sm:block">
-              <GhostButton small onClick={handleExportChat} disabled={!messages.length}>Export Chat</GhostButton>
+            <div className="flex items-center gap-2">
+              {/* Download dropdown */}
+              <div className="relative" ref={downloadRef}>
+                <GhostButton small onClick={() => setDownloadOpen(!downloadOpen)} disabled={isExporting}>
+                  <Download size={14} className="mr-1.5" />
+                  <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Download"}</span>
+                  <ChevronDown size={12} className="ml-1" style={{ transform: downloadOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                </GhostButton>
+                {downloadOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1 z-50 rounded-lg py-1 animate-fadeIn"
+                    style={{
+                      background: "var(--lead)",
+                      border: "1px solid var(--rule)",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                      minWidth: "200px",
+                    }}
+                  >
+                    <button
+                      onClick={handleDownloadChat}
+                      disabled={!messages.length}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: messages.length ? "pointer" : "not-allowed",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                        color: messages.length ? "var(--paper)" : "var(--ghost)",
+                        transition: "background 0.15s",
+                        opacity: messages.length ? 1 : 0.5,
+                      }}
+                      onMouseOver={(e) => { if (messages.length) e.currentTarget.style.background = "var(--graphite)"; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
+                    >
+                      <div className="flex items-center justify-center rounded" style={{ width: "28px", height: "28px", background: "rgba(59,123,246,0.1)", border: "1px solid rgba(59,123,246,0.2)" }}>
+                        <FileText size={14} style={{ color: "var(--volt)" }} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Export Chat</div>
+                        <div style={{ fontSize: "11px", color: "var(--ghost)" }}>Download conversation as .txt</div>
+                      </div>
+                    </button>
+                    <div style={{ height: "1px", background: "var(--rule)", margin: "2px 8px" }} />
+                    <button
+                      onClick={() => handleExportReport("pdf")}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                        color: "var(--paper)",
+                        transition: "background 0.15s",
+                      }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = "var(--graphite)"; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
+                    >
+                      <div className="flex items-center justify-center rounded" style={{ width: "28px", height: "28px", background: "rgba(237,28,36,0.1)", border: "1px solid rgba(237,28,36,0.2)" }}>
+                        <FileDown size={14} style={{ color: "var(--amd-signal)" }} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Analysis as PDF</div>
+                        <div style={{ fontSize: "11px", color: "var(--ghost)" }}>Full report with findings</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleExportReport("docx")}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "13px",
+                        color: "var(--paper)",
+                        transition: "background 0.15s",
+                      }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = "var(--graphite)"; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
+                    >
+                      <div className="flex items-center justify-center rounded" style={{ width: "28px", height: "28px", background: "rgba(59,123,246,0.1)", border: "1px solid rgba(59,123,246,0.2)" }}>
+                        <FileDown size={14} style={{ color: "var(--volt)" }} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Analysis as DOCX</div>
+                        <div style={{ fontSize: "11px", color: "var(--ghost)" }}>Editable Word document</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile back button */}
+              <Link to="/dashboard" className="sm:hidden">
+                <GhostButton small>
+                  <ArrowLeft size={14} />
+                </GhostButton>
+              </Link>
             </div>
           </div>
 
@@ -378,7 +537,7 @@ export default function Chat() {
                 return (
                   <div key={msg.id} className="flex justify-end animate-slideUp">
                     <div style={{ maxWidth: "min(520px, 85vw)" }}>
-                      <div className="rounded-2xl px-4 py-3" style={{ background: "var(--graphite)", borderRadius: "16px 16px 4px 16px" }}>
+                      <div className="rounded-2xl px-4 py-3" style={{ background: "linear-gradient(135deg, var(--graphite) 0%, rgba(59,123,246,0.08) 100%)", border: "1px solid var(--rule)", borderRadius: "16px 16px 4px 16px" }}>
                         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--paper)" }}>
                           {msg.content}
                         </p>
@@ -401,24 +560,30 @@ export default function Chat() {
                       {/* ANSWER */}
                       <div className="mb-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>ANSWER</span>
+                          <div className="flex items-center gap-1.5">
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--volt)", boxShadow: "0 0 6px rgba(59,123,246,0.4)" }} />
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--volt)", textTransform: "uppercase" }}>ANSWER</span>
+                          </div>
                           <div style={{ flex: 1, height: "1px", background: "var(--rule)" }} />
                         </div>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--paper)" }}>{sr.answer}</p>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)", letterSpacing: "-0.01em" }}>{sanitizeText(sr.answer)}</p>
                       </div>
 
                       {/* EVIDENCE */}
                       {sr.evidence.length > 0 && (
                         <div className="mb-4">
-                          <div className="mb-2" style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>EVIDENCE</div>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--cyan)" }} />
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--cyan)", textTransform: "uppercase" }}>EVIDENCE</span>
+                          </div>
                           <div className="space-y-2">
                             {sr.evidence.map((ev, i) => (
                               <div
                                 key={i}
-                                style={{ cursor: "pointer", transition: "opacity 0.15s" }}
+                                style={{ cursor: "pointer", transition: "all 0.15s" }}
                                 onClick={() => setSourceModal({ quote: ev.quote, source: ev.sourceDocument, docType: ev.documentType })}
-                                onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }}
-                                onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}
+                                onMouseOver={(e) => { e.currentTarget.style.transform = "translateX(2px)"; e.currentTarget.style.opacity = "0.85"; }}
+                                onMouseOut={(e) => { e.currentTarget.style.transform = "translateX(0)"; e.currentTarget.style.opacity = "1"; }}
                                 title="Click to view source"
                               >
                                 <EvidenceBox quote={ev.quote} style={{ marginBottom: "6px" }} />
@@ -435,10 +600,13 @@ export default function Chat() {
                       {/* RISK */}
                       {sr.risks && (
                         <div className="mb-4">
-                          <div className="mb-2" style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>RISK</div>
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--caution)" }} />
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--caution)", textTransform: "uppercase" }}>RISK</span>
+                          </div>
+                          <div className="flex items-start gap-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.12)", padding: "12px" }}>
                             <AlertTriangle size={14} style={{ color: "var(--caution)", marginTop: "3px", flexShrink: 0 }} />
-                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", lineHeight: 1.6, color: "var(--caution)" }}>{sr.risks}</p>
+                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", lineHeight: 1.6, color: "var(--paper)", opacity: 0.9 }}>{sanitizeText(sr.risks)}</p>
                           </div>
                         </div>
                       )}
@@ -446,13 +614,23 @@ export default function Chat() {
                       {/* RECOMMENDATION */}
                       {sr.recommendation && (
                         <div>
-                          <div className="mb-2" style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>RECOMMENDATION</div>
-                          <div className="flex items-start gap-2" style={{ background: "rgba(0, 212, 255, 0.04)", borderRadius: "4px", padding: "12px", borderLeft: "2px solid var(--volt)" }}>
-                            <ArrowRight size={14} style={{ color: "var(--volt)", marginTop: "3px", flexShrink: 0 }} />
-                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, lineHeight: 1.6, color: "var(--paper)" }}>{sr.recommendation}</p>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--cleared)" }} />
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--cleared)", textTransform: "uppercase" }}>RECOMMENDATION</span>
+                          </div>
+                          <div className="flex items-start gap-2 rounded-lg" style={{ background: "rgba(16, 185, 129, 0.04)", border: "1px solid rgba(16, 185, 129, 0.12)", padding: "12px", borderLeft: "2px solid var(--cleared)" }}>
+                            <ArrowRight size={14} style={{ color: "var(--cleared)", marginTop: "3px", flexShrink: 0 }} />
+                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, lineHeight: 1.6, color: "var(--paper)" }}>{sanitizeText(sr.recommendation)}</p>
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* Timestamp */}
+                    <div className="flex items-center gap-3 mt-1.5 px-1">
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: "var(--ghost)" }}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -465,7 +643,9 @@ export default function Chat() {
                 <div style={{ maxWidth: "min(720px, 95vw)", width: "100%" }}>
                   <div className="rounded-2xl p-4 sm:p-5" style={{ background: "var(--lead)", border: "1px solid var(--rule)", borderLeft: "3px solid var(--volt)", borderRadius: "4px 16px 16px 16px" }}>
                     <div className="mb-2 flex items-center gap-2">
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--ghost)", textTransform: "uppercase" }}>ANSWER</span>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "11px", fontWeight: 600, letterSpacing: "0.08em", color: "var(--volt)", textTransform: "uppercase" }}>
+                        {streamingAnswer ? "ANSWER" : "THINKING"}
+                      </span>
                       <div style={{ flex: 1, height: "1px", background: "var(--rule)" }} />
                       <div className="flex items-center gap-1">
                         <div className="animate-dot-1 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
@@ -473,20 +653,29 @@ export default function Chat() {
                         <div className="animate-dot-3 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
                       </div>
                     </div>
-                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--paper)" }}>
-                      {streamingAnswer}
-                      <span
-                        style={{
-                          display: "inline-block",
-                          width: "2px",
-                          height: "1em",
-                          background: "var(--volt)",
-                          marginLeft: "2px",
-                          verticalAlign: "text-bottom",
-                          animation: "blink 1s step-end infinite",
-                        }}
-                      />
-                    </p>
+                    {streamingAnswer ? (
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)" }}>
+                        {streamingAnswer}
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: "2px",
+                            height: "1em",
+                            background: "var(--volt)",
+                            marginLeft: "2px",
+                            verticalAlign: "text-bottom",
+                            animation: "blink 1s step-end infinite",
+                          }}
+                        />
+                      </p>
+                    ) : (
+                      <div className="flex items-center gap-3 py-2">
+                        <div style={{ width: "16px", height: "16px", borderRadius: "50%", border: "2px solid var(--volt)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
+                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", color: "var(--ash)", fontStyle: "italic" }}>
+                          Analyzing documents and reasoning...
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

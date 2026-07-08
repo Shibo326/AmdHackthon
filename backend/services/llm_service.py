@@ -1,30 +1,16 @@
-import asyncio
 import logging
 import os
-from enum import Enum
+import re
 from typing import Type, TypeVar
 
+import httpx
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-# LLM model constants
-GROQ_MODEL_DEFAULT = "llama-3.3-70b-versatile"
-CLAUDE_MODEL = "claude-3-5-sonnet-20241022"
-MAX_TOKENS_DEFAULT = 4096
-
-
-class LLMProvider(str, Enum):
-    GROQ = "GROQ"
-    CLAUDE = "CLAUDE"
-    AMD = "AMD"
-
-
-class ConfigurationError(Exception):
-    """Raised when required configuration is missing at startup."""
-    pass
+MAX_TOKENS_DEFAULT = 6144
 
 
 class LLMRateLimitError(Exception):
@@ -39,154 +25,58 @@ class LLMParseError(Exception):
 
 class LLMService:
     """
-    LLM abstraction that routes inference to Groq, Claude, or AMD Developer Cloud.
-    Provider is selected via the LLM_PROVIDER environment variable.
-    No mock/stub data — all responses come from the real LLM.
+    LLM service using Fireworks AI (AMD Instinct MI300X hardware).
+    All inference runs on AMD MI300X via the Fireworks platform.
     """
 
     def __init__(self):
-        provider_str = os.getenv("LLM_PROVIDER", "GROQ").upper()
-        try:
-            self.provider = LLMProvider(provider_str)
-        except ValueError:
-            logger.warning(f"Unknown LLM_PROVIDER '{provider_str}', defaulting to GROQ")
-            self.provider = LLMProvider.GROQ
-
-        if self.provider == LLMProvider.GROQ:
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise ConfigurationError(
-                    "GROQ_API_KEY is required when LLM_PROVIDER=GROQ. "
-                    "Get a free key at https://console.groq.com"
-                )
-            from groq import Groq
-            self._groq_client = Groq(api_key=api_key)
-            self._groq_model = os.getenv("GROQ_MODEL", GROQ_MODEL_DEFAULT)
-            logger.info(f"LLM provider: GROQ (model: {self._groq_model})")
-
-        elif self.provider == LLMProvider.CLAUDE:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ConfigurationError(
-                    "ANTHROPIC_API_KEY is required when LLM_PROVIDER=CLAUDE."
-                )
-            import anthropic
-            self._anthropic_client = anthropic.Anthropic(api_key=api_key)
-            logger.info(f"LLM provider: CLAUDE ({CLAUDE_MODEL})")
-
-        else:
-            # AMD: Fireworks AI — runs on AMD Instinct MI300X hardware
-            self._amd_endpoint = os.getenv("AMD_CLOUD_ENDPOINT", "https://api.fireworks.ai/inference/v1")
-            self._amd_api_key = os.getenv("AMD_CLOUD_API_KEY", "")
-            self._amd_model = os.getenv("AMD_MODEL", "accounts/fireworks/models/llama-v3p3-70b-instruct")
-            if not self._amd_api_key:
-                raise ConfigurationError(
-                    "AMD_CLOUD_API_KEY is required when LLM_PROVIDER=AMD. "
-                    "Get it from Fireworks AI: https://app.fireworks.ai/settings/api-keys"
-                )
-            logger.info(f"LLM provider: AMD/Fireworks (model: {self._amd_model})")
-            logger.info(f"AMD endpoint: {self._amd_endpoint}")
+        self._api_key = os.getenv("FIREWORKS_API_KEY", "")
+        if not self._api_key:
+            raise ValueError(
+                "FIREWORKS_API_KEY is required. "
+                "Set it in your .env file or Railway environment variables. "
+                "Get a key at https://app.fireworks.ai/settings/api-keys"
+            )
+        self._endpoint = os.getenv("FIREWORKS_ENDPOINT", "https://api.fireworks.ai/inference/v1")
+        if not self._endpoint:
+            raise ValueError(
+                "FIREWORKS_ENDPOINT is required. "
+                "Set it in your .env file or Railway environment variables."
+            )
+        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4-pro")
+        logger.info(f"Fireworks AI configured: endpoint={self._endpoint[:30]}...")
+        logger.info(f"Fireworks Model: {self._model}")
+        logger.info(f"LLMService initialized (Fireworks/AMD, model: {self._model})")
 
     async def complete(
         self,
         system_prompt: str,
         user_prompt: str,
         max_tokens: int = MAX_TOKENS_DEFAULT,
+        temperature: float = 0.3,
     ) -> str:
-        """Route a completion request to the active LLM provider."""
-        if self.provider == LLMProvider.GROQ:
-            return await self._complete_groq(system_prompt, user_prompt, max_tokens)
-        elif self.provider == LLMProvider.CLAUDE:
-            return await self._complete_claude(system_prompt, user_prompt, max_tokens)
-        else:
-            return await self._complete_amd(system_prompt, user_prompt, max_tokens)
-
-    async def _complete_groq(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int,
-    ) -> str:
-        """
-        Call Groq API — Llama 3.3 70B, fast and free.
-        Raises on any error so callers get a real error, not mock data.
-        """
-        def _sync_call() -> str:
-            try:
-                response = self._groq_client.chat.completions.create(
-                    model=self._groq_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=0.1,
-                )
-            except Exception as exc:
-                # Detect rate limit / quota errors from Groq SDK
-                exc_str = str(exc).lower()
-                if "rate_limit_exceeded" in exc_str or "429" in exc_str or "rate limit" in exc_str:
-                    raise LLMRateLimitError(str(exc)) from exc
-                raise
-            content = response.choices[0].message.content
-            logger.info(f"[GROQ] Response received ({len(content)} chars)")
-            return content
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_call)
-
-    async def _complete_claude(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int,
-    ) -> str:
-        """Call Anthropic Claude API."""
-        def _sync_call() -> str:
-            response = self._anthropic_client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-            )
-            content = response.content[0].text
-            logger.info(f"[CLAUDE] Response received ({len(content)} chars)")
-            return content
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_call)
-
-    async def _complete_amd(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int,
-    ) -> str:
-        """
-        # AMD: LLM inference via Fireworks AI running on AMD Instinct MI300X
-        # AMD: Model: Llama 3.3 70B Instruct (same as Groq but on AMD hardware)
-        """
-        import httpx
-
+        """Send a completion request to Fireworks AI (AMD MI300X)."""
         headers = {
-            "Authorization": f"Bearer {self._amd_api_key}",
+            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
         payload = {
-            "model": self._amd_model,
+            "model": self._model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "max_tokens": max_tokens,
-            "temperature": 0.1,
+            "temperature": temperature,
+            "top_p": 0.9,
+            "frequency_penalty": 0.3,
         }
 
         async with httpx.AsyncClient(timeout=180.0) as client:
             try:
                 response = await client.post(
-                    f"{self._amd_endpoint}/chat/completions",
+                    f"{self._endpoint}/chat/completions",
                     json=payload,
                     headers=headers,
                 )
@@ -194,12 +84,15 @@ class LLMService:
             except httpx.HTTPStatusError as exc:
                 exc_str = str(exc).lower()
                 if "429" in exc_str or "rate limit" in exc_str:
-                    raise LLMRateLimitError(f"AMD/Fireworks rate limit: {exc}") from exc
+                    raise LLMRateLimitError(f"Fireworks rate limit: {exc}") from exc
                 raise
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            logger.info(f"[AMD/Fireworks] Response received ({len(content)} chars)")
-            return content
+
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        # Sanitize problematic Unicode characters that render as black boxes in web fonts
+        content = _sanitize_unicode(content)
+        logger.info(f"[Fireworks/AMD] Response received ({len(content)} chars)")
+        return content
 
     async def _parse_with_retry(
         self,
@@ -238,7 +131,6 @@ class LLMService:
 
 def _strip_json_fences(text: str) -> str:
     """Remove markdown code fences, thinking tags, and extract JSON from verbose LLM responses."""
-    import re
     text = text.strip()
     # Strip <think>...</think> blocks (DeepSeek reasoning models)
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
@@ -275,4 +167,40 @@ def _strip_json_fences(text: str) -> str:
     # Remove control characters that break JSON parsing (keep \n and \t as escaped)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    return text
+
+
+def _sanitize_unicode(text: str) -> str:
+    """
+    Replace problematic Unicode characters that render as black boxes/squares
+    in web fonts (Inter, system fonts) with their ASCII equivalents.
+    
+    Common culprits from LLM outputs:
+    - \u2010 (hyphen), \u2011 (non-breaking hyphen), \u2012 (figure dash) → regular hyphen
+    - \u2013 (en-dash), \u2014 (em-dash) → kept as-is (most fonts support these)
+    - \u00AD (soft hyphen) → removed
+    - \u200B (zero-width space), \u200C, \u200D, \uFEFF (BOM) → removed
+    - \u2018, \u2019 (smart single quotes) → regular apostrophe
+    - \u201C, \u201D (smart double quotes) → regular double quote
+    """
+    if not text:
+        return text
+    # Replace uncommon hyphens with regular hyphen
+    text = text.replace('\u2010', '-')  # hyphen
+    text = text.replace('\u2011', '-')  # non-breaking hyphen
+    text = text.replace('\u2012', '-')  # figure dash
+    # Remove soft hyphen and zero-width characters
+    text = text.replace('\u00AD', '')   # soft hyphen
+    text = text.replace('\u200B', '')   # zero-width space
+    text = text.replace('\u200C', '')   # zero-width non-joiner
+    text = text.replace('\u200D', '')   # zero-width joiner
+    text = text.replace('\uFEFF', '')   # BOM / zero-width no-break space
+    # Smart quotes → regular quotes
+    text = text.replace('\u2018', "'")  # left single quote
+    text = text.replace('\u2019', "'")  # right single quote
+    text = text.replace('\u201C', '"')  # left double quote
+    text = text.replace('\u201D', '"')  # right double quote
+    # Replace other problematic dashes that some fonts can't render
+    text = text.replace('\u2015', '—')  # horizontal bar → em-dash
+    text = text.replace('\u2212', '-')  # minus sign → hyphen
     return text

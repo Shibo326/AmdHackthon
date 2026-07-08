@@ -116,9 +116,10 @@ async def test_conflict_detection_skips_with_one_document():
 
 
 @pytest.mark.asyncio
-async def test_conflict_pairwise_comparison_three_docs():
+async def test_conflict_consolidated_single_call_three_docs():
     """
-    Three documents should result in 3 pairwise comparisons (C(3,2) = 3).
+    Three documents should result in exactly 1 consolidated LLM call
+    (not 3 pairwise calls). This tests the performance optimization.
     """
     from services.conflict_engine import ConflictEngine
     from services.llm_service import LLMService
@@ -143,8 +144,8 @@ async def test_conflict_pairwise_comparison_three_docs():
     ]
 
     conflicts = await engine.detect(all_chunks, doc_names)
-    # C(3,2) = 3 pairs
-    assert call_count == 3
+    # Consolidated: 1 call for ALL documents (was 3 pairwise calls)
+    assert call_count == 1
 
 
 @pytest.mark.asyncio

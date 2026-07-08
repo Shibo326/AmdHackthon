@@ -6,6 +6,8 @@ AMD MI300X-powered document intelligence service.
 import logging
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -15,6 +17,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -42,6 +45,17 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# ---- Request ID Middleware ----
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+app.add_middleware(RequestIDMiddleware)
+
 # ---- CORS Middleware ----
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 if allowed_origins_env:
@@ -57,7 +71,7 @@ async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -
         content={
             "error": "Too many requests. Please wait a moment before trying again.",
             "code": "RATE_LIMITED",
-            "details": {"retry_after": str(exc.retry_after)},
+            "suggestion": f"You've exceeded the rate limit. Please retry after {exc.retry_after}.",
         },
     )
 
@@ -93,7 +107,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         content={
             "error": "An unexpected error occurred.",
             "code": "UNKNOWN_ERROR",
-            "details": None,
+            "suggestion": "Please try again. If the problem persists, contact support.",
         },
     )
 
@@ -101,8 +115,27 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # ---- Health Check ----
 @app.get("/health", tags=["health"])
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok", "version": "1.0.0"}
+    """Health check endpoint with provider and timestamp info."""
+    return {
+        "status": "healthy",
+        "service": "clausify-api",
+        "version": "1.0.0",
+        "provider": "fireworks",
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4-pro"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/provider-info", tags=["health"])
+async def provider_info():
+    """Returns current LLM provider configuration (safe, no secrets)."""
+    endpoint = os.getenv("FIREWORKS_ENDPOINT", "")
+    return {
+        "provider": "fireworks",
+        "isAMD": True,
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4-pro"),
+        "endpoint": endpoint[:40] + "..." if endpoint else None,
+    }
 
 
 # ---- Startup Event ----
@@ -119,7 +152,7 @@ async def startup_event():
         from services.embedding_service import EmbeddingService
         from services.vector_store import VectorStore
         from services.session_manager import SessionManager
-        from services.llm_service import LLMService, ConfigurationError
+        from services.llm_service import LLMService
         from services.conflict_engine import ConflictEngine
         from services.analysis_service import AnalysisService
         from services.pdf_generator import PDFGenerator
@@ -143,13 +176,8 @@ async def startup_event():
         session_manager = SessionManager()
         logger.info("SessionManager initialized")
 
-        try:
-            llm_service = LLMService()
-            logger.info(f"LLMService initialized (provider: {llm_service.provider.value})")
-        except ConfigurationError as e:
-            logger.error(f"LLMService configuration error: {e}")
-            logger.warning("Set ANTHROPIC_API_KEY or use LLM_PROVIDER=AMD for mock mode")
-            llm_service = _create_stub_llm_service()
+        llm_service = LLMService()
+        logger.info("LLMService initialized (Fireworks/AMD)")
 
         conflict_engine = ConflictEngine(llm_service)
         logger.info("ConflictEngine initialized")
@@ -173,6 +201,7 @@ async def startup_event():
         analyze._analysis_service = analysis_service
         analyze._session_manager = session_manager
         analyze._vector_store = vector_store
+        analyze._embedding_service = embedding_service
 
         chat._embedding_service = embedding_service
         chat._vector_store = vector_store
@@ -188,20 +217,6 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         logger.exception("Startup exception details:")
-
-
-def _create_stub_llm_service():
-    """Create a stub LLM service for when configuration is missing."""
-    from services.llm_service import LLMService, LLMProvider
-
-    class StubLLMService(LLMService):
-        def __init__(self):
-            self.provider = LLMProvider.AMD
-            self._amd_endpoint = ""
-            self._amd_api_key = ""
-            logger.warning("Running with STUB LLM service")
-
-    return StubLLMService()
 
 
 # ---- Entry Point ----

@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, useEffect, type DragEvent } from "react";
 import { useNavigate } from "react-router";
 import { NavigationBar } from "../components/NavigationBar";
 import { PrimaryButton } from "../components/Buttons";
@@ -20,7 +20,9 @@ import { motion, AnimatePresence } from "framer-motion";
 const LOADING_STAGES = [
   { label: "Extracting text", icon: "📄" },
   { label: "AMD embeddings", icon: "⚡" },
-  { label: "Running analysis", icon: "🧠" },
+  { label: "AI analysis (5 parallel calls)", icon: "🧠" },
+  { label: "Detecting conflicts", icon: "🔍" },
+  { label: "Building report", icon: "📊" },
 ];
 
 export default function Landing() {
@@ -32,6 +34,7 @@ export default function Landing() {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -83,32 +86,63 @@ export default function Landing() {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Escape key clears file selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFiles([]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleAnalyze = async () => {
     if (!files.length) return;
     setError(null);
     setIsLoading(true);
+    setElapsedSeconds(0);
     dispatch({ type: "RESET" });
     setLoadingStage(0);
+
+    // Start elapsed timer
+    const timerInterval = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
     const stageTimers = [
-      setTimeout(() => setLoadingStage(1), 1400),
-      setTimeout(() => setLoadingStage(2), 2800),
+      setTimeout(() => setLoadingStage(1), 2000),
+      setTimeout(() => setLoadingStage(2), 4000),
+      setTimeout(() => setLoadingStage(3), 12000),
+      setTimeout(() => setLoadingStage(4), 25000),
     ];
+
+    const toastId = toast.loading('Analyzing documents with AI...');
+
     try {
       const uploadResult = await uploadDocuments(files);
       stageTimers.forEach(clearTimeout);
-      setLoadingStage(2);
+      setLoadingStage(2); // Upload done = text extracted + embedded, now analyzing
       dispatch({ type: "SET_SESSION", payload: uploadResult.sessionId });
       dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
       const analyzeResult = await analyzeDocuments(uploadResult.sessionId);
       dispatch({ type: "SET_ANALYSIS", payload: analyzeResult.analysis });
+      clearInterval(timerInterval);
+      toast.dismiss(toastId);
       setIsLoading(false);
       navigate("/dashboard");
     } catch (err) {
       stageTimers.forEach(clearTimeout);
+      clearInterval(timerInterval);
+      toast.dismiss(toastId);
       const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
       setError(msg);
-      if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+      if (msg.toLowerCase().includes("upload")) {
+        toast.error('Upload failed. Please check your files and try again.');
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
         toast.error("Network error — is the backend running?");
+      } else {
+        toast.error('Analysis failed. Please try again.');
       }
       setIsLoading(false);
     }
@@ -370,6 +404,9 @@ export default function Landing() {
                     />
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px", fontWeight: 600, color: "var(--amd-signal)" }}>
                       AMD MI300X Processing
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "14px", fontWeight: 600, color: "var(--volt)", marginLeft: "auto" }}>
+                      {elapsedSeconds}s
                     </span>
                   </div>
                   <AnimatePresence mode="wait">

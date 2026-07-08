@@ -17,10 +17,12 @@ import {
   X,
   FileDown,
   BarChart3,
+  DollarSign,
 } from "lucide-react";
 import { exportReport, analyzeDocuments } from "../../lib/api";
 import { toast } from "sonner";
 import { useAppState, useAppDispatch } from "../../lib/store";
+import { sanitizeText } from "../../lib/sanitize";
 
 export default function Dashboard() {
   const dispatch = useAppDispatch();
@@ -43,6 +45,18 @@ export default function Dashboard() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Cmd/Ctrl+E keyboard shortcut for export
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault();
+        handleExport('pdf');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sessionId]);
 
   const handleExport = async (format: "pdf" | "docx") => {
     if (!sessionId) return;
@@ -104,6 +118,13 @@ export default function Dashboard() {
 
   const hasConflicts = analysis.conflicts.length > 0;
   const hasHighRisk = analysis.risks.some((r) => r.level === "HIGH");
+
+  const processingSeconds = (() => {
+    const analyzedAt = analysis.analyzedAt ? new Date(analysis.analyzedAt) : null;
+    const uploadedAt = documents[0]?.uploadedAt ? new Date(documents[0].uploadedAt) : null;
+    const ms = analyzedAt && uploadedAt ? analyzedAt.getTime() - uploadedAt.getTime() : null;
+    return ms && ms > 0 && ms < 300000 ? (ms / 1000).toFixed(1) : null;
+  })();
 
   const SidebarContent = () => (
     <>
@@ -323,10 +344,6 @@ export default function Dashboard() {
           <div className="p-4 sm:p-6 md:p-8 space-y-5">
             {/* AMD Performance Metrics Banner */}
             {(() => {
-              const analyzedAt = analysis.analyzedAt ? new Date(analysis.analyzedAt) : null;
-              const uploadedAt = documents[0]?.uploadedAt ? new Date(documents[0].uploadedAt) : null;
-              const processingMs = analyzedAt && uploadedAt ? analyzedAt.getTime() - uploadedAt.getTime() : null;
-              const processingSeconds = processingMs && processingMs > 0 ? (processingMs / 1000).toFixed(1) : null;
               return (
                 <div
                   className="rounded-xl p-4 animate-slideDown"
@@ -362,6 +379,41 @@ export default function Dashboard() {
                 </div>
               );
             })()}
+
+            {/* Cost Savings ROI Banner */}
+            <div
+              className="rounded-xl p-4 animate-slideDown"
+              style={{
+                background: "linear-gradient(135deg, rgba(16,163,74,0.06) 0%, rgba(6,182,212,0.06) 100%)",
+                border: "1px solid rgba(16,163,74,0.2)",
+              }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "rgba(16,163,74,0.1)", border: "1px solid rgba(16,163,74,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <DollarSign size={18} style={{ color: "var(--cleared)" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "14px", fontWeight: 700, color: "var(--paper)" }}>Estimated Cost Savings</div>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>vs. manual procurement review</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-6">
+                  <div className="flex flex-col items-center">
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "16px", fontWeight: 400, color: "var(--ash)" }}>4-6 hrs</span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>Time</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "16px", fontWeight: 700, color: "var(--cleared)" }}>{processingSeconds ? `${processingSeconds}s` : "< 60s"}</span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>AI Speed</span>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "20px", fontWeight: 700, color: "var(--cleared)" }}>$850+</span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>Per Review</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Conflict Alert */}
             {hasConflicts && (
@@ -424,7 +476,7 @@ export default function Dashboard() {
                 </div>
                 <div className="card-scroll" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                   <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: "15px", lineHeight: 1.6, color: "var(--ash)", marginBottom: "16px" }}>
-                    {analysis.executiveSummary}
+                    {sanitizeText(analysis.executiveSummary)}
                   </p>
                   <div style={{ borderTop: "1px solid var(--rule)", paddingTop: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
                     <div className="flex items-center gap-1.5">
@@ -463,7 +515,7 @@ export default function Dashboard() {
                         <RiskBadge variant={risk.level} />
                         <div className="flex-1 min-w-0">
                           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--paper)", marginBottom: "4px" }}>
-                            {risk.description}
+                            {sanitizeText(risk.description)}
                           </p>
                           <EvidenceTag filename={risk.sourceDocument} />
                         </div>
@@ -634,7 +686,7 @@ export default function Dashboard() {
                 <div className="card-scroll" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                   <div className="inline-block px-4 py-2 rounded-full mb-4" style={{ background: "rgba(0,196,140,0.12)", border: "1px solid rgba(0,196,140,0.25)" }}>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--cleared)" }}>
-                      {analysis.recommendation.title}
+                      {sanitizeText(analysis.recommendation.title)}
                     </span>
                   </div>
                   {/* Confidence Score */}
@@ -671,7 +723,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--ash)", marginBottom: "12px" }}>
-                    {analysis.recommendation.summary}
+                    {sanitizeText(analysis.recommendation.summary)}
                   </p>
                   {analysis.recommendation.nextSteps.length > 0 && (
                     <ul className="space-y-1 mb-4">

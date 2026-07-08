@@ -21,10 +21,10 @@ _docx_generator: DOCXGenerator | None = None
 _session_manager: SessionManager | None = None
 
 
-def _err(status: int, message: str, code: str):
+def _err(status: int, message: str, code: str, suggestion: str = ""):
     return JSONResponse(
         status_code=status,
-        content={"error": message, "code": code, "details": None},
+        content={"error": message, "code": code, "suggestion": suggestion or None},
     )
 
 
@@ -53,10 +53,10 @@ async def generate_report(request: ReportRequestWithFormat):
     try:
         session = session_manager.get_session(session_id)
     except SessionNotFoundError:
-        return _err(404, "Session not found.", "SESSION_NOT_FOUND")
+        return _err(404, "Session not found.", "SESSION_NOT_FOUND", "Please upload documents and run analysis first.")
 
     if session.analysis is None:
-        return _err(404, "Session not found.", "SESSION_NOT_FOUND")
+        return _err(404, "No analysis available to export.", "NO_ANALYSIS", "Please run the analysis before generating a report.")
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
@@ -69,7 +69,7 @@ async def generate_report(request: ReportRequestWithFormat):
             )
         except Exception as e:
             logger.error(f"DOCX generation failed for session {session_id}: {e}")
-            return _err(500, "Report generation failed.", "REPORT_FAILED")
+            return _err(500, "Report generation failed.", "PDF_GENERATION_FAILED", "An error occurred generating the DOCX report. Please try again.")
 
         filename = f"clausify-report-{today}.docx"
         return StreamingResponse(
@@ -89,7 +89,7 @@ async def generate_report(request: ReportRequestWithFormat):
             )
         except Exception as e:
             logger.error(f"PDF generation failed for session {session_id}: {e}")
-            return _err(500, "Report generation failed.", "REPORT_FAILED")
+            return _err(500, "Report generation failed.", "PDF_GENERATION_FAILED", "An error occurred generating the PDF report. Please try again.")
 
         filename = f"clausify-report-{today}.pdf"
         return StreamingResponse(

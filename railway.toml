@@ -1,16 +1,12 @@
-# Clausify AI Backend — Railway Deployment Configuration
-# AMD Developer Hackathon: ACT II | Track 3
-
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "backend/Dockerfile"
+builder = "nixpacks"
 
 [deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+startCommand = "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
-restartPolicyType = "ON_FAILURE"
+restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
-[service]
-rootDirectory = "backend"
+[environments.production.variables]
+PYTHON_VERSION = "3.11"

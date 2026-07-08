@@ -31,10 +31,10 @@ _session_manager: SessionManager | None = None
 _llm_service: LLMService | None = None
 
 
-def _err(status: int, message: str, code: str):
+def _err(status: int, message: str, code: str, suggestion: str = ""):
     return JSONResponse(
         status_code=status,
-        content={"error": message, "code": code, "details": None},
+        content={"error": message, "code": code, "suggestion": suggestion or None},
     )
 
 
@@ -59,28 +59,28 @@ async def chat(request: ChatRequest):
 
     # --- Validate question ---
     if not question or not question.strip():
-        return _err(400, "Question is required.", "INVALID_REQUEST")
+        return _err(400, "Question is required.", "EMPTY_MESSAGE", "Please type a question about your documents.")
 
     # --- Validate session ---
     try:
         session = session_manager.get_session(session_id)
     except SessionNotFoundError:
-        return _err(404, "Session not found.", "SESSION_NOT_FOUND")
+        return _err(404, "Session not found.", "SESSION_NOT_FOUND", "Please upload documents first to create a session.")
 
     # --- Embed question ---
     question_embedding = embedding_service.embed(question)
 
-    # --- Retrieve top-8 relevant chunks for richer context ---
-    chunks = vector_store.query_top_k(session_id, question_embedding, k=8)
+    # --- Retrieve top-12 relevant chunks for richer context ---
+    chunks = vector_store.query_top_k(session_id, question_embedding, k=12)
 
     # --- If very few chunks retrieved, supplement with all session chunks ---
     # This ensures the LLM has enough context for questions spanning the whole document
-    if len(chunks) < 3:
+    if len(chunks) < 4:
         all_chunks = vector_store.get_all_chunks(session_id)
-        # Merge: keep top-k first, add remaining up to 12 total
+        # Merge: keep top-k first, add remaining up to 16 total
         seen_ids = {c.id for c in chunks}
         for chunk in all_chunks:
-            if chunk.id not in seen_ids and len(chunks) < 12:
+            if chunk.id not in seen_ids and len(chunks) < 16:
                 chunks.append(chunk)
                 seen_ids.add(chunk.id)
 
@@ -92,7 +92,7 @@ async def chat(request: ChatRequest):
     user_prompt = build_chat_prompt(question, chunks, history=history_dicts)
 
     try:
-        raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=4096)
+        raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
         raw = _strip_json_fences(raw)
 
         # Sanitize control characters that break JSON parsing
@@ -174,7 +174,7 @@ async def chat(request: ChatRequest):
 
     except Exception as e:
         logger.error(f"Chat LLM error for session {session_id}: {e}", exc_info=True)
-        return _err(502, f"Chat service error: {type(e).__name__}: {str(e)[:120]}", "ANALYSIS_FAILED")
+        return _err(502, f"Chat service error: {type(e).__name__}: {str(e)[:120]}", "STREAM_FAILED", "The AI service encountered an error. Please try again.")
 
     elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -209,24 +209,24 @@ async def chat_stream(request: ChatRequest):
     # --- Validate ---
     if not question or not question.strip():
         async def err_gen():
-            yield f"data: {json.dumps({'type': 'error', 'code': 'INVALID_REQUEST', 'error': 'Question is required.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'code': 'EMPTY_MESSAGE', 'error': 'Question is required.', 'suggestion': 'Please type a question about your documents.'})}\n\n"
         return StreamingResponse(err_gen(), media_type="text/event-stream")
 
     try:
         session = session_manager.get_session(session_id)
     except SessionNotFoundError:
         async def err_gen():
-            yield f"data: {json.dumps({'type': 'error', 'code': 'SESSION_NOT_FOUND', 'error': 'Session not found.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'code': 'SESSION_NOT_FOUND', 'error': 'Session not found.', 'suggestion': 'Please upload documents first to create a session.'})}\n\n"
         return StreamingResponse(err_gen(), media_type="text/event-stream")
 
     # --- Retrieve chunks ---
     question_embedding = embedding_service.embed(question)
-    chunks = vector_store.query_top_k(session_id, question_embedding, k=8)
-    if len(chunks) < 3:
+    chunks = vector_store.query_top_k(session_id, question_embedding, k=12)
+    if len(chunks) < 4:
         all_chunks = vector_store.get_all_chunks(session_id)
         seen_ids = {c.id for c in chunks}
         for chunk in all_chunks:
-            if chunk.id not in seen_ids and len(chunks) < 12:
+            if chunk.id not in seen_ids and len(chunks) < 16:
                 chunks.append(chunk)
                 seen_ids.add(chunk.id)
 
@@ -238,7 +238,7 @@ async def chat_stream(request: ChatRequest):
     async def generate():
         try:
             # Get full LLM response
-            raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=4096)
+            raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
             raw = _strip_json_fences(raw)
             data = json.loads(raw)
 
@@ -299,7 +299,7 @@ async def chat_stream(request: ChatRequest):
 
         except Exception as e:
             logger.error(f"Stream error for session {session_id}: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'code': 'ANALYSIS_FAILED', 'error': str(e)[:120]})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'code': 'STREAM_FAILED', 'error': str(e)[:120], 'suggestion': 'The AI service encountered an error. Please try again.'})}\n\n"
 
     return StreamingResponse(
         generate(),
