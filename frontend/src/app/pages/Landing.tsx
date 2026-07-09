@@ -139,12 +139,19 @@ export default function Landing() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Track the pending sessionId so we can retry analyze without re-uploading
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+
   const handleAnalyze = async () => {
-    if (!files.length) return;
+    if (!files.length && !pendingSessionId) return;
     setError(null);
     setIsLoading(true);
     setElapsedSeconds(0);
-    dispatch({ type: "RESET" });
+
+    // Only RESET if we're starting fresh (no pending session to recover)
+    if (!pendingSessionId) {
+      dispatch({ type: "RESET" });
+    }
     setLoadingStage(0);
 
     // Start elapsed timer
@@ -162,16 +169,32 @@ export default function Landing() {
     const toastId = toast.loading('Analyzing documents with AI...');
 
     try {
-      const uploadResult = await uploadDocuments(files);
-      stageTimers.forEach(clearTimeout);
-      setLoadingStage(2); // Upload done = text extracted + embedded, now analyzing
-      dispatch({ type: "SET_SESSION", payload: uploadResult.sessionId });
-      dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
-      const analyzeResult = await analyzeDocuments(uploadResult.sessionId);
+      let currentSessionId = pendingSessionId;
+
+      // Only upload if we don't have a pending session already
+      if (!currentSessionId) {
+        const uploadResult = await uploadDocuments(files);
+        stageTimers.forEach(clearTimeout);
+        setLoadingStage(2);
+        currentSessionId = uploadResult.sessionId;
+        dispatch({ type: "SET_SESSION", payload: currentSessionId });
+        dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
+        // Save the session so if connection drops, we can retry without re-uploading
+        setPendingSessionId(currentSessionId);
+      } else {
+        // Recovery path — upload already done, skip straight to analysis
+        stageTimers.forEach(clearTimeout);
+        setLoadingStage(2);
+        toast.loading('Reconnected — resuming analysis...', { id: toastId });
+      }
+
+      const analyzeResult = await analyzeDocuments(currentSessionId);
       if (!analyzeResult.analysis) {
         throw new Error("Analysis returned empty — please try again");
       }
       dispatch({ type: "SET_ANALYSIS", payload: analyzeResult.analysis });
+      // Clear pending session on success
+      setPendingSessionId(null);
       clearInterval(timerInterval);
       toast.dismiss(toastId);
       setIsLoading(false);
@@ -184,21 +207,36 @@ export default function Landing() {
       const lower = rawMsg.toLowerCase();
       let msg: string;
       let toastMsg: string;
+
+      // If upload already succeeded (pendingSessionId exists), this is an analysis error
+      // Don't clear pendingSessionId — user can retry without re-uploading
       if (lower.includes("timed out") || lower.includes("timeout")) {
-        msg = "Analysis is taking longer than expected. Railway may be warming up — please try again in 30 seconds.";
-        toastMsg = msg;
+        if (pendingSessionId) {
+          msg = "Connection dropped during analysis — your documents are still uploaded. Click 'Retry Analysis' to continue without re-uploading.";
+        } else {
+          msg = "Analysis is taking longer than expected. Railway may be warming up — please try again in 30 seconds.";
+        }
+        toastMsg = "Connection timeout — click Retry to resume";
       } else if (lower.includes("rate") || lower.includes("429") || lower.includes("quota")) {
         msg = "AI service is busy right now. Please wait 60 seconds and try again.";
         toastMsg = msg;
+        // Clear pending session on rate limit — backend may have partially run
+        setPendingSessionId(null);
       } else if (lower.includes("upload") || lower.includes("413")) {
         msg = "Upload failed — check that your files are valid PDFs or images under 10MB.";
         toastMsg = msg;
+        setPendingSessionId(null);
       } else if (lower.includes("network") || lower.includes("fetch") || lower.includes("failed to fetch")) {
-        msg = "Connection error — check your internet and try again.";
-        toastMsg = msg;
+        if (pendingSessionId) {
+          msg = "Connection dropped — your documents are still on the server. Click 'Retry Analysis' to resume.";
+        } else {
+          msg = "Connection error — check your internet and try again.";
+        }
+        toastMsg = "Network error — click Retry to resume";
       } else {
         msg = "Analysis failed. Please try again. If it keeps happening, try with fewer documents.";
         toastMsg = msg;
+        setPendingSessionId(null);
       }
       setError(msg);
       toast.error(toastMsg);
@@ -421,6 +459,38 @@ export default function Landing() {
           </motion.div>
         )}
 
+        {/* Retry Analysis button — shown when connection dropped after upload succeeded */}
+        {pendingSessionId && !isLoading && (
+          <motion.div
+            className="mt-4 w-full animate-slideUp"
+            style={{ maxWidth: "600px" }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <button
+              onClick={handleAnalyze}
+              style={{
+                width: "100%",
+                height: "48px",
+                borderRadius: "var(--radius-btn)",
+                background: "rgba(245,166,35,0.08)",
+                border: "1px solid rgba(245,166,35,0.35)",
+                cursor: "pointer",
+                fontFamily: "'DM Sans', sans-serif",
+                fontWeight: 700,
+                fontSize: "15px",
+                color: "var(--caution)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+              }}
+            >
+              ↺ Retry Analysis — documents still uploaded, no re-upload needed
+            </button>
+          </motion.div>
+        )}
+
         {/* Analyze button */}
         {files.length > 0 && !isLoading && (
           <motion.div
@@ -469,10 +539,7 @@ export default function Landing() {
                   <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "var(--volt-dim)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 1 }}>
                     <Loader size={16} style={{ color: "var(--volt)" }} className="animate-spin-slow" />
                   </div>
-                  {/* Orbiting particles */}
-                  <span className="orbit-particle" style={{ animationDuration: "2s", top: "50%", left: "50%", marginTop: "-3px", marginLeft: "-3px" }} />
-                  <span className="orbit-particle" style={{ animationDuration: "2.8s", animationDelay: "-0.9s", top: "50%", left: "50%", marginTop: "-3px", marginLeft: "-3px", opacity: 0.7 }} />
-                  <span className="orbit-particle" style={{ animationDuration: "3.5s", animationDelay: "-1.8s", top: "50%", left: "50%", marginTop: "-3px", marginLeft: "-3px", opacity: 0.5 }} />
+
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
