@@ -147,30 +147,101 @@ async def analyze_documents(request: Request, body: AnalyzeRequest):
 
 @router.post("/benchmark")
 async def benchmark_embeddings():
-    """Benchmarks embedding performance with 50 test chunks."""
+    """
+    Benchmarks AMD MI300X embedding speed via Fireworks AI vs local CPU baseline.
+
+    Runs 50 contract clause chunks through:
+      1. Fireworks AI /v1/embeddings (AMD Instinct MI300X cloud)
+      2. Local sentence-transformers CPU baseline
+
+    Returns timing, ratio, and hardware info for demo purposes.
+    """
+    import httpx
+    import os
+
     embedding_service = _embedding_service
 
-    if embedding_service is None:
-        return _err(503, "Embedding service not initialized.", "BENCHMARK_FAILED")
-
     test_chunks = [
-        f"This is test clause number {i} for benchmarking embedding performance in the Clausify system."
-        for i in range(50)
-    ]
+        "Payment terms: Net 30 days from invoice date. Late payment incurs 1.5% monthly interest.",
+        "Supplier warrants all goods for 24 months from delivery date.",
+        "Total contract value: $142,500.00 USD, subject to annual CPI adjustment.",
+        "Governing law: State of California, United States of America.",
+        "Either party may terminate this agreement with 30 days written notice.",
+        "Force majeure: Neither party liable for delays caused by events beyond reasonable control.",
+        "Confidentiality obligations survive termination for a period of five (5) years.",
+        "Intellectual property developed under this contract remains property of the client.",
+        "Dispute resolution: binding arbitration under AAA Commercial Arbitration Rules.",
+        "Indemnification: Supplier indemnifies Client against third-party IP infringement claims.",
+    ] * 5  # 50 chunks total
 
-    start_time = time.time()
-    try:
-        embeddings = embedding_service.embed_batch(test_chunks)
-        elapsed = time.time() - start_time
-        return {
-            "status": "success",
-            "chunks_processed": len(test_chunks),
-            "total_time_seconds": round(elapsed, 3),
-            "avg_time_per_chunk_ms": round((elapsed / len(test_chunks)) * 1000, 2),
-            "chunks_per_second": round(len(test_chunks) / elapsed, 1),
-            "provider": "fireworks",
-            "embedding_model": "all-MiniLM-L6-v2",
-        }
-    except Exception as e:
-        elapsed = time.time() - start_time
-        return _err(500, f"Benchmark failed: {str(e)[:120]}", "BENCHMARK_FAILED")
+    fireworks_key = os.getenv("FIREWORKS_API_KEY", "")
+    fireworks_endpoint = os.getenv("FIREWORKS_ENDPOINT", "https://api.fireworks.ai/inference/v1")
+
+    results = {}
+
+    # --- AMD MI300X via Fireworks AI ---
+    if fireworks_key:
+        amd_start = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{fireworks_endpoint}/embeddings",
+                    headers={
+                        "Authorization": f"Bearer {fireworks_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "nomic-ai/nomic-embed-text-v1.5",
+                        "input": test_chunks,
+                    },
+                )
+                response.raise_for_status()
+            amd_elapsed = round(time.perf_counter() - amd_start, 3)
+            results["amd_fireworks"] = {
+                "hardware": "AMD Instinct MI300X via Fireworks AI",
+                "model": "nomic-ai/nomic-embed-text-v1.5",
+                "chunks_processed": len(test_chunks),
+                "time_seconds": amd_elapsed,
+                "chunks_per_second": round(len(test_chunks) / amd_elapsed, 1),
+            }
+        except Exception as e:
+            results["amd_fireworks"] = {"error": str(e)[:120]}
+    else:
+        results["amd_fireworks"] = {"error": "FIREWORKS_API_KEY not configured"}
+
+    # --- Local CPU baseline (sentence-transformers) ---
+    if embedding_service is not None:
+        cpu_start = time.perf_counter()
+        try:
+            embedding_service.embed_batch(test_chunks)
+            cpu_elapsed = round(time.perf_counter() - cpu_start, 3)
+            results["cpu_baseline"] = {
+                "hardware": "CPU (sentence-transformers all-MiniLM-L6-v2)",
+                "model": "all-MiniLM-L6-v2",
+                "chunks_processed": len(test_chunks),
+                "time_seconds": cpu_elapsed,
+                "chunks_per_second": round(len(test_chunks) / cpu_elapsed, 1),
+            }
+        except Exception as e:
+            results["cpu_baseline"] = {"error": str(e)[:120]}
+    else:
+        results["cpu_baseline"] = {"error": "EmbeddingService not initialized"}
+
+    # --- Compute speedup ratio ---
+    speedup_ratio = None
+    if (
+        "time_seconds" in results.get("amd_fireworks", {})
+        and "time_seconds" in results.get("cpu_baseline", {})
+    ):
+        cpu_t = results["cpu_baseline"]["time_seconds"]
+        amd_t = results["amd_fireworks"]["time_seconds"]
+        if amd_t > 0:
+            speedup_ratio = round(cpu_t / amd_t, 2)
+
+    return {
+        "status": "success",
+        "benchmark": results,
+        "speedup_ratio": speedup_ratio,
+        "speedup_label": f"{speedup_ratio}x faster on AMD MI300X" if speedup_ratio else None,
+        "note": "AMD MI300X benchmark via Fireworks AI embeddings endpoint",
+    }
