@@ -95,9 +95,6 @@ class LLMService:
             "temperature": temperature,
             "top_p": 0.9,
             "frequency_penalty": 0.3,
-            # Disable extended thinking for Kimi/QwQ reasoning models — we want
-            # direct JSON output, not internal chain-of-thought mixed into the response
-            "enable_thinking": False,
         }
 
         async with httpx.AsyncClient(timeout=100.0) as client:
