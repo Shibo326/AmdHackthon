@@ -1,5 +1,6 @@
 import io
 import logging
+import os
 from datetime import datetime
 
 from reportlab.lib import colors
@@ -7,6 +8,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm, mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     HRFlowable,
     KeepTogether,
@@ -21,6 +24,101 @@ from reportlab.platypus import (
 from models.response import AnalysisResult
 
 logger = logging.getLogger(__name__)
+
+# ─── Unicode Font Registration ────────────────────────────────────────────────
+# Register DejaVu Sans for full Unicode support (₱, $, €, etc.)
+# Falls back to Helvetica if DejaVu not found (no crash, just black boxes)
+_FONT_REGISTERED = False
+
+def _register_unicode_fonts():
+    global _FONT_REGISTERED
+    if _FONT_REGISTERED:
+        return
+
+    # Common locations for DejaVu fonts
+    search_paths = [
+        # Linux (Railway/Docker)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        # macOS
+        "/Library/Fonts/DejaVuSans.ttf",
+        # Windows
+        "C:/Windows/Fonts/DejaVuSans.ttf",
+        # Python package (reportlab ships with some fonts)
+        os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans.ttf"),
+    ]
+
+    regular = None
+    bold = None
+
+    for path in search_paths:
+        if os.path.exists(path):
+            regular = path
+            bold_path = path.replace("DejaVuSans.ttf", "DejaVuSans-Bold.ttf")
+            if os.path.exists(bold_path):
+                bold = bold_path
+            break
+
+    if regular:
+        try:
+            pdfmetrics.registerFont(TTFont("DejaVuSans", regular))
+            if bold:
+                pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold))
+            else:
+                pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", regular))
+            from reportlab.lib.fonts import addMapping
+            addMapping("DejaVuSans", 0, 0, "DejaVuSans")
+            addMapping("DejaVuSans", 1, 0, "DejaVuSans-Bold")
+            _FONT_REGISTERED = True
+            logger.info("DejaVu Unicode fonts registered for PDF generation")
+        except Exception as e:
+            logger.warning(f"Could not register DejaVu fonts: {e} — falling back to Helvetica")
+    else:
+        # Try to download/install DejaVu via reportlab's findSystemFonts
+        try:
+            from reportlab.pdfbase.ttfonts import TTFont
+            import urllib.request, tempfile, shutil
+
+            url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+            url_bold = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
+            fonts_dir = os.path.join(os.path.dirname(__file__), "fonts")
+            os.makedirs(fonts_dir, exist_ok=True)
+
+            reg_path = os.path.join(fonts_dir, "DejaVuSans.ttf")
+            bold_path = os.path.join(fonts_dir, "DejaVuSans-Bold.ttf")
+
+            if not os.path.exists(reg_path):
+                urllib.request.urlretrieve(url, reg_path)
+            if not os.path.exists(bold_path):
+                urllib.request.urlretrieve(url_bold, bold_path)
+
+            pdfmetrics.registerFont(TTFont("DejaVuSans", reg_path))
+            pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold_path))
+            _FONT_REGISTERED = True
+            logger.info("DejaVu fonts downloaded and registered")
+        except Exception as e:
+            logger.warning(f"Could not download DejaVu fonts: {e} — using Helvetica (₱ may show as box)")
+
+def _F(bold=False) -> str:
+    """Return the best available font name."""
+    if _FONT_REGISTERED:
+        return "DejaVuSans-Bold" if bold else "DejaVuSans"
+    return "Helvetica-Bold" if bold else "Helvetica"
+
+def _sanitize(text: str) -> str:
+    """Replace currency symbols with safe equivalents if Unicode font not available."""
+    if _FONT_REGISTERED:
+        return text  # Unicode font handles everything
+    # Fallback replacements when only Helvetica is available
+    return (text
+        .replace("₱", "PHP ")
+        .replace("€", "EUR ")
+        .replace("£", "GBP ")
+        .replace("¥", "JPY ")
+    )
+
+# Register fonts at module load time
+_register_unicode_fonts()
 
 # ─── Color Palette ───────────────────────────────────────────────────────────
 # Primary
@@ -63,49 +161,52 @@ class PDFGenerator:
         self._build_styles()
 
     def _build_styles(self):
-        """Define custom paragraph styles."""
+        """Define custom paragraph styles using Unicode-capable font."""
+        F = _F()
+        FB = _F(bold=True)
+
         self.title = ParagraphStyle(
             "RTitle", parent=self.styles["Title"],
             fontSize=32, textColor=WHITE, alignment=TA_CENTER,
-            spaceAfter=8, fontName="Helvetica-Bold", leading=38,
+            spaceAfter=8, fontName=FB, leading=38,
         )
         self.subtitle = ParagraphStyle(
             "RSub", parent=self.styles["Normal"],
             fontSize=13, textColor=SLATE_300, alignment=TA_CENTER,
-            spaceAfter=6, fontName="Helvetica",
+            spaceAfter=6, fontName=F,
         )
         self.section = ParagraphStyle(
             "RSec", parent=self.styles["Heading1"],
-            fontSize=15, textColor=SLATE_900, fontName="Helvetica-Bold",
+            fontSize=15, textColor=SLATE_900, fontName=FB,
             spaceBefore=20, spaceAfter=6,
         )
         self.body = ParagraphStyle(
             "RBody", parent=self.styles["Normal"],
-            fontSize=10, textColor=SLATE_700, fontName="Helvetica",
+            fontSize=10, textColor=SLATE_700, fontName=F,
             spaceAfter=6, leading=15,
         )
         self.body_bold = ParagraphStyle(
             "RBodyB", parent=self.body,
-            fontName="Helvetica-Bold", textColor=SLATE_900,
+            fontName=FB, textColor=SLATE_900,
         )
         self.small = ParagraphStyle(
             "RSmall", parent=self.styles["Normal"],
-            fontSize=9, textColor=SLATE_500, fontName="Helvetica",
+            fontSize=9, textColor=SLATE_500, fontName=F,
         )
         self.footer = ParagraphStyle(
             "RFoot", parent=self.styles["Normal"],
             fontSize=8, textColor=SLATE_500, alignment=TA_CENTER,
-            fontName="Helvetica",
+            fontName=F,
         )
         self.metric_label = ParagraphStyle(
             "RMetL", parent=self.styles["Normal"],
             fontSize=8, textColor=SLATE_500, alignment=TA_CENTER,
-            fontName="Helvetica-Bold", leading=11,
+            fontName=FB, leading=11,
         )
         self.metric_value = ParagraphStyle(
             "RMetV", parent=self.styles["Normal"],
             fontSize=22, textColor=SLATE_900, alignment=TA_CENTER,
-            fontName="Helvetica-Bold", leading=26,
+            fontName=FB, leading=26,
         )
 
     def generate_report(self, analysis: AnalysisResult, session_id: str) -> bytes:
@@ -273,7 +374,7 @@ class PDFGenerator:
         elements.append(Spacer(1, 0.3 * cm))
 
         # Summary in a light card
-        summary_data = [[Paragraph(analysis.executiveSummary, ParagraphStyle(
+        summary_data = [[Paragraph(_sanitize(analysis.executiveSummary), ParagraphStyle(
             "SumBody", parent=self.body, leading=16, spaceAfter=0,
         ))]]
         summary_table = Table(summary_data, colWidths=[15.5 * cm])
@@ -327,7 +428,7 @@ class PDFGenerator:
                 Paragraph(f"<b>{risk.level}</b>", ParagraphStyle(
                     f"Lv{i}", parent=cell_style, textColor=tc, fontName="Helvetica-Bold")),
                 Paragraph(risk.category, cell_style),
-                Paragraph(risk.description, cell_style),
+                Paragraph(_sanitize(risk.description), cell_style),
                 Paragraph(risk.sourceDocument, ParagraphStyle(
                     f"Src{i}", parent=cell_style, fontSize=8, textColor=SLATE_500)),
             ])
@@ -437,8 +538,8 @@ class PDFGenerator:
             doc_data = [
                 [Paragraph(f"<b>{conflict.documentA.name}</b>", self.small),
                  Paragraph(f"<b>{conflict.documentB.name}</b>", self.small)],
-                [Paragraph(f'"{conflict.documentA.excerpt}"', excerpt_style),
-                 Paragraph(f'"{conflict.documentB.excerpt}"', excerpt_style)],
+                [Paragraph(f'"{_sanitize(conflict.documentA.excerpt)}"', excerpt_style),
+                 Paragraph(f'"{_sanitize(conflict.documentB.excerpt)}"', excerpt_style)],
             ]
             doc_table = Table(doc_data, colWidths=[8 * cm, 8 * cm])
             doc_table.setStyle(TableStyle([
@@ -456,9 +557,9 @@ class PDFGenerator:
             block.append(Spacer(1, 0.2 * cm))
 
             block.append(Paragraph(
-                f"<b>Explanation:</b> {conflict.explanation}", self.body))
+                f"<b>Explanation:</b> {_sanitize(conflict.explanation)}", self.body))
             block.append(Paragraph(
-                f"<b>Action:</b> {conflict.recommendedAction}",
+                f"<b>Action:</b> {_sanitize(conflict.recommendedAction)}",
                 ParagraphStyle(f"Act{i}", parent=self.body, textColor=BLUE_700),
             ))
             block.append(Spacer(1, 0.4 * cm))
@@ -506,7 +607,7 @@ class PDFGenerator:
         elements.append(Spacer(1, 0.3 * cm))
 
         # Summary
-        elements.append(Paragraph(rec.summary, self.body))
+        elements.append(Paragraph(_sanitize(rec.summary), self.body))
         elements.append(Spacer(1, 0.4 * cm))
 
         # Next steps as numbered list in a card
@@ -518,8 +619,8 @@ class PDFGenerator:
                 step_rows.append([
                     Paragraph(f"<b>{idx}</b>", ParagraphStyle(
                         f"StN{idx}", parent=self.body, fontSize=10,
-                        textColor=AMD_RED, fontName="Helvetica-Bold", alignment=TA_CENTER)),
-                    Paragraph(step, self.body),
+                        textColor=AMD_RED, fontName=_F(bold=True), alignment=TA_CENTER)),
+                    Paragraph(_sanitize(step), self.body),
                 ])
             step_table = Table(step_rows, colWidths=[1.2 * cm, 14.8 * cm])
             step_table.setStyle(TableStyle([
