@@ -23,7 +23,7 @@ import { useAppState } from "../../lib/store";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import type { StructuredAIResponse } from "../../lib/types";
-import { sanitizeText } from "../../lib/sanitize";
+import { MarkdownText } from "../components/MarkdownText";
 
 const fallbackQuestions = [
   "What are the payment terms?",
@@ -619,7 +619,7 @@ export default function Chat() {
                           </div>
                           <div style={{ flex: 1, height: "1px", background: "var(--rule)" }} />
                         </div>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)", letterSpacing: "-0.01em" }}>{sanitizeText(sr.answer)}</p>
+                        <MarkdownText text={sr.answer} style={{ fontSize: "15px", lineHeight: 1.7 }} />
                         <div className="flex justify-end mt-2">
                           <button
                             onClick={() => {
@@ -675,7 +675,7 @@ export default function Chat() {
                           </div>
                           <div className="flex items-start gap-2 rounded-lg" style={{ background: "rgba(245, 158, 11, 0.04)", border: "1px solid rgba(245, 158, 11, 0.12)", padding: "12px" }}>
                             <AlertTriangle size={14} style={{ color: "var(--caution)", marginTop: "3px", flexShrink: 0 }} />
-                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", lineHeight: 1.6, color: "var(--paper)", opacity: 0.9 }}>{sanitizeText(sr.risks)}</p>
+                            <MarkdownText text={sr.risks} style={{ fontSize: "14px", lineHeight: 1.6, opacity: 0.9 }} />
                           </div>
                         </div>
                       )}
@@ -689,7 +689,7 @@ export default function Chat() {
                           </div>
                           <div className="flex items-start gap-2 rounded-lg" style={{ background: "rgba(16, 185, 129, 0.04)", border: "1px solid rgba(16, 185, 129, 0.12)", padding: "12px", borderLeft: "2px solid var(--cleared)" }}>
                             <ArrowRight size={14} style={{ color: "var(--cleared)", marginTop: "3px", flexShrink: 0 }} />
-                            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, lineHeight: 1.6, color: "var(--paper)" }}>{sanitizeText(sr.recommendation)}</p>
+                            <MarkdownText text={sr.recommendation} style={{ fontSize: "14px", fontWeight: 500, lineHeight: 1.6 }} />
                           </div>
                         </div>
                       )}
@@ -723,8 +723,8 @@ export default function Chat() {
                       </div>
                     </div>
                     {streamingAnswer ? (
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)" }}>
-                        {streamingAnswer}
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)" }}>
+                        <MarkdownText text={streamingAnswer} />
                         <span
                           style={{
                             display: "inline-block",
@@ -736,7 +736,7 @@ export default function Chat() {
                             animation: "blink 1s step-end infinite",
                           }}
                         />
-                      </p>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-3 py-2">
                         <div style={{ width: "16px", height: "16px", borderRadius: "50%", border: "2px solid var(--volt)", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />

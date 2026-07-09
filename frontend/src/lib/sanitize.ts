@@ -24,3 +24,15 @@ export function sanitizeText(text: string | undefined | null): string {
     // Horizontal bar → em-dash
     .replace(/\u2015/g, '—');
 }
+
+/**
+ * Strip markdown syntax from text for plain-text contexts (copy, export).
+ */
+export function stripMarkdown(text: string | undefined | null): string {
+  if (!text) return '';
+  return sanitizeText(text)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*]\s+/gm, '• ');
+}
