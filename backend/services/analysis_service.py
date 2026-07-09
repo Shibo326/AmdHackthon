@@ -114,6 +114,7 @@ class AnalysisService:
             risks_result,
             matrix_result,
             recommendation_result,
+            conflicts_result,
         ) = await asyncio.gather(
             self._with_timeout(
                 self._generate_summary_and_questions(system_prompt, chunks),
@@ -131,20 +132,12 @@ class AnalysisService:
                 self._generate_recommendation(system_prompt, chunks),
                 "recommendation",
             ),
-            return_exceptions=True,
-        )
-
-        # Run conflict detection IN PARALLEL with the gather above — don't wait
-        # We inject it into the gather results after
-        await asyncio.sleep(0.2)
-        try:
-            conflicts_result = await self._with_timeout(
+            self._with_timeout(
                 self.conflict_engine.detect(chunks, doc_names),
                 "conflicts",
-            )
-        except Exception as e:
-            logger.warning(f"Conflict detection failed: {e}")
-            conflicts_result = []
+            ),
+            return_exceptions=True,
+        )
 
         # Unpack summary + questions
         if isinstance(summary_and_questions_result, Exception):
@@ -252,7 +245,7 @@ Return ONLY valid JSON:
         """Generate risk analysis list."""
         user_prompt = build_risk_prompt(chunks)
         # Risks need a larger output budget — may return many items across 8 docs
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=2500)
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1500)
         logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
         logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")
@@ -339,7 +332,7 @@ DOCUMENT CONTEXT:
 {COMPARISON_MATRIX_PROMPT}"""
 
         # Reduced max_tokens: 2048 instead of default 4096
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=2048)
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1500)
         raw = _strip_json_fences(raw)
 
         # Robust JSON extraction — handle common LLM formatting issues
