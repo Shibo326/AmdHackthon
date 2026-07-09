@@ -95,12 +95,8 @@ async def chat(request: ChatRequest):
         raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
         raw = _strip_json_fences(raw)
 
-        # Sanitize control characters that break JSON parsing
         import re
-        raw = raw.replace('\r\n', '\\n').replace('\r', '\\n')
-        # Remove control chars (except \n and \t which we'll escape)
-        raw = raw.replace('\t', '\\t')
-        # Remove other control characters (0x00-0x1F except already-escaped ones)
+        # Only remove true control characters — do NOT escape \n or \t as that breaks JSON strings
         raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
 
         # Try to parse JSON, with fallback extraction
@@ -241,10 +237,8 @@ async def chat_stream(request: ChatRequest):
             raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
             raw = _strip_json_fences(raw)
 
-            # Sanitize control characters that break JSON parsing
             import re
-            raw = raw.replace('\r\n', '\\n').replace('\r', '\\n')
-            raw = raw.replace('\t', '\\t')
+            # Only remove true control characters — do NOT escape \n or \t as that breaks JSON strings
             raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
 
             # Robust JSON extraction — same logic as /chat endpoint
