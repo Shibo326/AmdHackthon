@@ -479,6 +479,219 @@ git push -u origin feature/your-feature-name
 
 ---
 
+## 🧠 Deep Technical Architecture
+
+### RAG (Retrieval-Augmented Generation) Pipeline
+
+Clausify implements a production-grade RAG system that combines semantic vector search with expert-tuned LLM prompting:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        INGESTION PIPELINE                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  PDF/Image Upload                                                   │
+│       ↓                                                             │
+│  DocumentParser (PyMuPDF + pytesseract OCR)                        │
+│       ↓                                                             │
+│  Raw Text (per document)                                            │
+│       ↓                                                             │
+│  EmbeddingService.chunk_text()                                      │
+│  ┌──────────────────────────────────────────────┐                  │
+│  │ Semantic chunking: 600 tokens per chunk       │                  │
+│  │ 80-token overlap (preserves cross-boundary    │                  │
+│  │ context for clause references)                │                  │
+│  │ Word-boundary aware splitting                 │                  │
+│  └──────────────────────────────────────────────┘                  │
+│       ↓                                                             │
+│  SentenceTransformer.encode() → 384-dim normalized vectors         │
+│       ↓                                                             │
+│  ChromaDB (persistent, session-isolated collection)                 │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                        RETRIEVAL PIPELINE                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  User Question                                                      │
+│       ↓                                                             │
+│  EmbeddingService.embed(question) → 384-dim query vector           │
+│       ↓                                                             │
+│  ChromaDB cosine similarity search (top-12 chunks)                  │
+│       ↓                                                             │
+│  Context Enrichment:                                                │
+│  ┌──────────────────────────────────────────────┐                  │
+│  │ If < 4 chunks retrieved:                      │                  │
+│  │   Supplement with ALL session chunks          │                  │
+│  │   up to 16 total (ensures full-doc questions  │                  │
+│  │   aren't left without context)                │                  │
+│  └──────────────────────────────────────────────┘                  │
+│       ↓                                                             │
+│  build_chat_prompt(question, chunks, history)                       │
+│  ┌──────────────────────────────────────────────┐                  │
+│  │ System: Expert analyst persona (world-class)  │                  │
+│  │ Context: Top-12 chunks (1200 chars each)      │                  │
+│  │ History: Last 5 conversation turns            │                  │
+│  │ Question: User's actual query                 │                  │
+│  │ Format: Enforced JSON structure               │                  │
+│  └──────────────────────────────────────────────┘                  │
+│       ↓                                                             │
+│  Fireworks AI (DeepSeek V4 Pro on AMD MI300X)                      │
+│  Parameters: temp=0.3, top_p=0.9, freq_penalty=0.3                │
+│  Max tokens: 6144 (allows deep reasoning)                          │
+│       ↓                                                             │
+│  Structured Response:                                               │
+│  { answer, evidence[], risks, recommendation }                      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Analysis Pipeline (5 Parallel LLM Calls)
+
+The full analysis runs 5 specialized LLM calls **concurrently** using `asyncio.gather()`, reducing total time from ~150s (sequential) to ~30-60s (parallel):
+
+| Call | Purpose | Token Budget | Optimization |
+|------|---------|:------------:|--------------|
+| ① Summary + Questions | Executive briefing + 5 suggested questions | 6144 | Merged into 1 call (saves 10s) |
+| ② Risk Analysis | Identify financial, legal, compliance risks | 6144 | Forensic reasoning process |
+| ③ Comparison Matrix | Side-by-side supplier/option comparison | 2048 | Reduced budget (structured output) |
+| ④ Recommendation | Decisive action with next steps | 6144 | CEO-level opinionated advice |
+| ⑤ Conflict Detection | Cross-document contradictions | 4096 | Consolidated (1 call for ALL docs) |
+
+**Previous architecture** used pairwise conflict detection: N*(N-1)/2 calls for N documents (up to 10 calls for 5 docs). The consolidated approach reduces this to exactly **1 call** regardless of document count.
+
+### Prompt Engineering Philosophy
+
+Every prompt follows a 5-step cognitive architecture:
+
+1. **UNDERSTAND** — Infer user intent beyond the literal question
+2. **EXTRACT** — Pull exact figures, dates, clauses from documents
+3. **ANALYZE** — Apply domain expertise (benchmarks, norms, precedents)
+4. **SYNTHESIZE** — Connect dots across documents and knowledge
+5. **ADVISE** — Give opinionated, actionable recommendations
+
+Anti-generic rules enforced in all prompts:
+- "Never use filler phrases like 'Based on my analysis...'"
+- "Be SPECIFIC: '7.3% overcharge ($3,300 on $45,200 base)' not 'there is a discrepancy'"
+- "Every finding includes who should do what by when"
+- Good/bad output examples in each prompt
+
+### Session & Persistence Architecture
+
+```
+SessionManager
+├── In-memory dict (fast access)
+├── JSON persistence (survives restarts)
+│   └── backend/data/sessions/{session_id}.json
+├── Analysis caching (avoids re-running LLM)
+└── ChromaDB collections (one per session)
+    └── backend/data/chroma/
+```
+
+Sessions are created on upload and persist to disk immediately. On startup, all sessions are loaded from disk. Analysis results are cached — subsequent `/api/analyze` calls return instantly if analysis is already complete.
+
+### Streaming Architecture (SSE)
+
+The chat endpoint supports real-time streaming via Server-Sent Events:
+
+```
+Client                          Server
+  │                               │
+  │  POST /api/chat/stream        │
+  │  {sessionId, question, hist}  │
+  │──────────────────────────────→│
+  │                               │ embed question
+  │                               │ retrieve top-12 chunks
+  │                               │ call LLM (full response)
+  │                               │ parse JSON
+  │  data: {type:"token", text}   │
+  │←──────────────────────────────│ stream answer word-by-word
+  │  data: {type:"token", text}   │ (~55 words/sec, 18ms delay)
+  │←──────────────────────────────│
+  │  ...                          │
+  │  data: {type:"done", ...}     │
+  │←──────────────────────────────│ final: evidence + risks + rec
+  │                               │
+```
+
+The frontend accumulates tokens in a `streamingAnswer` state variable, rendering with a blinking cursor. On "done", it constructs the full structured message with evidence cards, risk badges, and recommendation panel.
+
+---
+
+## 🏎️ Performance Optimizations
+
+| Optimization | Impact | How |
+|--------------|--------|-----|
+| Parallel LLM calls | 3-5× faster analysis | `asyncio.gather()` for all 5 calls |
+| Analysis caching | 0ms on re-analysis | Check `session.analysis` before re-running |
+| Suggested questions cache | 0ms on repeat | Reuses from completed analysis |
+| Consolidated conflicts | N²→1 calls | Single prompt for all documents |
+| Vite bundle splitting | ~35% faster FCP | 6 manual chunks (react, router, radix, mui, charts, motion) |
+| Embedding warm-up | Eliminates cold start | Model encoded "warmup" string on startup |
+| Chunk size tuning | Better retrieval | 600 tokens + 80 overlap (vs 512/50 default) |
+| Top-12 retrieval | Richer context | 12 chunks (vs typical 5) + fallback to 16 |
+| Frequency penalty 0.3 | Less repetition | LLM avoids repeating generic phrases |
+
+---
+
+## 🔒 Security & Error Handling
+
+- **Request ID Middleware**: UUID attached to every request (`X-Request-ID` header)
+- **Global exception handler**: Catches all unhandled errors, logs full traceback server-side, returns safe message to client
+- **Rate limiting**: slowapi with per-IP limits (60/min global, 5/min analyze)
+- **Structured error responses**: All errors return `{error, code, suggestion}` — never raw stack traces
+- **CORS configured**: Configurable allowed origins via environment variable
+- **File validation**: MIME type + extension + size checks on upload
+- **Session isolation**: Each user's documents stored in separate ChromaDB collection
+- **Unicode sanitization**: LLM outputs cleaned of problematic characters that render as black boxes
+- **Frontend ErrorBoundary**: Catches React render crashes with reload button
+- **SessionGuard**: Auto-detects expired sessions and resets state gracefully
+
+---
+
+## 📊 Design System
+
+The frontend uses a custom dark theme with AMD branding:
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--ink` | `#080D1A` | Page background |
+| `--paper` | `#F0F4FF` | Primary text |
+| `--lead` | `#0D1528` | Card backgrounds |
+| `--graphite` | `#111E35` | Secondary surfaces |
+| `--rule` | `#1E2D4A` | Borders, dividers |
+| `--ash` | `#8B9CC8` | Secondary text |
+| `--ghost` | `#4A5878` | Muted text |
+| `--volt` | `#3B7BF6` | Primary accent (blue) |
+| `--amd-signal` | `#ED1C24` | AMD red / conflicts |
+| `--cleared` | `#10B981` | Success / recommendations |
+| `--caution` | `#F59E0B` | Warnings / risks |
+| `--cyan` | `#00D4FF` | Evidence citations |
+
+Typography: Inter (body), DM Sans (headings), JetBrains Mono (timestamps/code)
+
+---
+
+## 🧪 Testing Strategy
+
+```bash
+cd backend
+pytest tests/ -v --tb=short
+```
+
+Test suite covers:
+- Upload validation (valid PDF, invalid types, size limits)
+- Session lifecycle (create, check valid/invalid)
+- Full analysis pipeline (single doc, multi-doc with conflicts)
+- Chat (basic question, history context, streaming, empty question rejection)
+- Conflict detection (single doc = no conflicts, two docs = detects discrepancies)
+- PDF/DOCX export (valid file bytes, invalid session handling)
+- Benchmark endpoint (timing + chunk count)
+- Demo endpoint (pre-loaded data integrity)
+
+---
+
 ## 👥 Team — Clausify AI 🇵🇭
 
 Built by **Rhenmart Dela Cruz** and team
