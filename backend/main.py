@@ -58,8 +58,16 @@ app.add_middleware(RequestIDMiddleware)
 
 # ---- CORS Middleware ----
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+base_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
 if allowed_origins_env:
-    allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",")]
+    extra = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    allowed_origins = list(set(base_origins + extra))
 else:
     allowed_origins = ["*"]
 
@@ -83,7 +91,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Cache-Control"],
 )
 
 # ---- Register Routers ----

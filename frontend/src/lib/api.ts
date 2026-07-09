@@ -9,6 +9,31 @@ export const API_BASE_URL: string =
   (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
 
 /**
+ * fetch() wrapper with a configurable timeout.
+ * Throws a user-friendly error when the request exceeds timeoutMs.
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 60000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s — please try again`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Upload one or more files for analysis.
  * POST /api/upload — multipart/form-data
  */
@@ -21,10 +46,10 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
     formData.append('files', file);
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     body: formData,
-  });
+  }, 30000);
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -44,11 +69,11 @@ export async function analyzeDocuments(sessionId: string): Promise<AnalyzeRespon
   const url = `${API_BASE_URL}/api/analyze`;
   console.log(`[API] POST ${url} — sessionId=${sessionId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
-  });
+  }, 120000);
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -77,11 +102,11 @@ export async function sendChatMessage(
   const url = `${API_BASE_URL}/api/chat`;
   console.log(`[API] POST ${url} — sessionId=${sessionId}, question="${question}"`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, question, history }),
-  });
+  }, 60000);
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -105,11 +130,11 @@ export async function exportReport(
   const url = `${API_BASE_URL}/api/report`;
   console.log(`[API] POST ${url} — sessionId=${sessionId}, format=${format}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, format }),
-  });
+  }, 30000);
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -129,11 +154,11 @@ export async function getSuggestedQuestions(sessionId: string): Promise<string[]
   const url = `${API_BASE_URL}/api/suggest-questions`;
   console.log(`[API] POST ${url} — sessionId=${sessionId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
-  });
+  }, 15000);
 
   console.log(`[API] POST ${url} → ${response.status}`);
 

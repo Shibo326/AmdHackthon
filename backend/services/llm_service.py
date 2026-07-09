@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -55,7 +56,30 @@ class LLMService:
         max_tokens: int = MAX_TOKENS_DEFAULT,
         temperature: float = 0.3,
     ) -> str:
-        """Send a completion request to Fireworks AI (AMD MI300X)."""
+        """Send a completion request to Fireworks AI with automatic rate-limit retry."""
+        for attempt in range(3):
+            try:
+                return await self._call_fireworks(system_prompt, user_prompt, max_tokens, temperature)
+            except LLMRateLimitError:
+                if attempt < 2:
+                    wait = (attempt + 1) * 3  # 3s then 6s
+                    logger.warning(
+                        f"[Fireworks] Rate limited, retry {attempt + 1}/3 in {wait}s..."
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error("[Fireworks] Rate limit — all retries exhausted")
+                    raise
+        raise LLMRateLimitError("Max retries exceeded")
+
+    async def _call_fireworks(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> str:
+        """Execute a single Fireworks AI completion request."""
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -89,7 +113,6 @@ class LLMService:
 
         data = response.json()
         content = data["choices"][0]["message"]["content"]
-        # Sanitize problematic Unicode characters that render as black boxes in web fonts
         content = _sanitize_unicode(content)
         logger.info(f"[Fireworks/AMD] Response received ({len(content)} chars)")
         return content

@@ -105,19 +105,15 @@ class AnalysisService:
         )
 
         if chunks:
-            logger.info(
-                f"[DEBUG] First chunk (source={chunks[0].source_document}): "
-                f"{chunks[0].text[:200]}"
-            )
+            logger.debug(f"First chunk: {chunks[0].source_document} ({len(chunks)} chunks)")
         else:
-            logger.warning("[DEBUG] NO CHUNKS available for analysis!")
+            logger.warning("No document chunks — extraction may have failed")
 
         (
             summary_and_questions_result,
             risks_result,
             matrix_result,
             recommendation_result,
-            conflicts_result,
         ) = await asyncio.gather(
             self._with_timeout(
                 self._generate_summary_and_questions(system_prompt, chunks),
@@ -135,12 +131,19 @@ class AnalysisService:
                 self._generate_recommendation(system_prompt, chunks),
                 "recommendation",
             ),
-            self._with_timeout(
-                self.conflict_engine.detect(chunks, doc_names),
-                "conflicts",
-            ),
             return_exceptions=True,
         )
+
+        # Run conflict detection sequentially after gather — avoids rate-limit pile-up
+        await asyncio.sleep(0.5)
+        try:
+            conflicts_result = await self._with_timeout(
+                self.conflict_engine.detect(chunks, doc_names),
+                "conflicts",
+            )
+        except Exception as e:
+            logger.warning(f"Conflict detection failed: {e}")
+            conflicts_result = []
 
         # Unpack summary + questions
         if isinstance(summary_and_questions_result, Exception):

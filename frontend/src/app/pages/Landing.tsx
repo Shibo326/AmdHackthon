@@ -126,6 +126,9 @@ export default function Landing() {
       dispatch({ type: "SET_SESSION", payload: uploadResult.sessionId });
       dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
       const analyzeResult = await analyzeDocuments(uploadResult.sessionId);
+      if (!analyzeResult.analysis) {
+        throw new Error("Analysis returned empty — please try again");
+      }
       dispatch({ type: "SET_ANALYSIS", payload: analyzeResult.analysis });
       clearInterval(timerInterval);
       toast.dismiss(toastId);

@@ -20,6 +20,179 @@ import { getDemoData } from "../../lib/api";
 import { motion } from "framer-motion";
 import type { Analysis, PreSeededMessage, UploadedDocument } from "../../lib/types";
 
+// ─── Offline fallback data ────────────────────────────────────────────────────
+const FALLBACK_DOCUMENTS: UploadedDocument[] = [
+  { id: "d1", filename: "Demo_Contract_TechCorp.pdf", fileType: "pdf", fileSize: 3800, processingStatus: "completed", uploadedAt: new Date().toISOString() },
+  { id: "d2", filename: "Demo_Invoice_TechCorp.pdf", fileType: "pdf", fileSize: 10700, processingStatus: "completed", uploadedAt: new Date().toISOString() },
+  { id: "d3", filename: "Demo_Quotation_TechCorp.pdf", fileType: "pdf", fileSize: 5500, processingStatus: "completed", uploadedAt: new Date().toISOString() },
+  { id: "d4", filename: "Demo_PurchaseOrder_GlobalDynamics.pdf", fileType: "pdf", fileSize: 6200, processingStatus: "completed", uploadedAt: new Date().toISOString() },
+  { id: "d5", filename: "Demo_VendorConfirmation_TechCorp.pdf", fileType: "pdf", fileSize: 7100, processingStatus: "completed", uploadedAt: new Date().toISOString() },
+];
+
+const FALLBACK_ANALYSIS: Analysis = {
+  analyzedAt: new Date().toISOString(),
+  executiveSummary:
+    "TechCorp's invoice (INV-2026-0847) charges $112,297.50 against a contracted value of $95,000/yr — a $17,297 overcharge driven by unit price inflation ($525 vs $425 quoted) and removal of the agreed 5% volume discount. The Vendor Confirmation explicitly overrides the Purchase Order's Net 60 payment terms with Net 30, creating a 30-day cash flow exposure of ~$112K. Three compounding risks require immediate action: the contract auto-renews July 17 (39 days away), warranty terms conflict between 24 months (PO) and 12 months (vendor), and jurisdiction clauses are irreconcilable (Texas vs California). Immediate legal review and price reconciliation are required before any payment is processed.",
+  risks: [
+    {
+      id: "r1",
+      level: "HIGH",
+      description:
+        "Invoice overcharge of $13,144.95 (13.2% above PO value): AI License billed at $525/unit vs $425 quoted; 5% volume discount ($4,810) not applied. If paid as invoiced, Global Dynamics overpays by $13,144.95 with no contractual basis for the difference.",
+      sourceDocument: "Demo_Invoice_TechCorp.pdf",
+      category: "Financial",
+    },
+    {
+      id: "r2",
+      level: "HIGH",
+      description:
+        "Payment terms conflict: PO specifies Net 60; Vendor Confirmation enforces Net 30. Invoice due July 31, 2026. If Net 30 prevails, $112,297.50 is due 30 days earlier than budgeted — a material working capital impact. Late fee disparity (1.5% PO vs 2.5% vendor) compounds exposure.",
+      sourceDocument: "Demo_VendorConfirmation_TechCorp.pdf",
+      category: "Legal",
+    },
+    {
+      id: "r3",
+      level: "HIGH",
+      description:
+        "Contract auto-renewal deadline is July 17, 2026 — 39 days away. Missing the 60-day notice window locks Global Dynamics into another $95,000 annual term. With unresolved pricing disputes, renewing without renegotiation is financially imprudent.",
+      sourceDocument: "Demo_Contract_TechCorp.pdf",
+      category: "Strategic",
+    },
+    {
+      id: "r4",
+      level: "MEDIUM",
+      description:
+        "Warranty conflict: PO requires 24 months as condition of award; Vendor Confirmation provides only 12 months standard. TechCorp charges $8,500/year for extended warranty. Accepting delivery without resolving this forfeits $8,500 in contractual protection.",
+      sourceDocument: "Demo_PurchaseOrder_GlobalDynamics.pdf",
+      category: "Legal",
+    },
+    {
+      id: "r5",
+      level: "MEDIUM",
+      description:
+        "Jurisdiction conflict: PO specifies Texas law and Austin arbitration; Vendor Confirmation specifies California law and San Francisco litigation. In a dispute, choice of law could shift forum costs by $50K–$200K and alter applicable statutes.",
+      sourceDocument: "Demo_VendorConfirmation_TechCorp.pdf",
+      category: "Legal",
+    },
+  ],
+  comparisonMatrix: [
+    {
+      field: "AI Platform License Unit Price",
+      values: { "Purchase Order (PO)": "$425.00/unit", "Vendor Confirmation": "$525.00/unit" },
+      winner: "Purchase Order — $100/unit cheaper, consistent with Quotation QT-2026-0392",
+    },
+    {
+      field: "Total Billed Amount",
+      values: { "Purchase Order (PO)": "$99,152.55", "Vendor Confirmation": "$112,297.50" },
+      winner: "Purchase Order — $13,144.95 lower; vendor has no contractual basis for higher amount",
+    },
+    {
+      field: "Payment Terms",
+      values: { "Purchase Order (PO)": "Net 60 days", "Vendor Confirmation": "Net 30 days" },
+      winner: "Purchase Order — 30 extra days of working capital retention",
+    },
+    {
+      field: "Warranty Period",
+      values: { "Purchase Order (PO)": "24 months", "Vendor Confirmation": "12 months" },
+      winner: "Purchase Order — double the coverage at no additional cost per agreed terms",
+    },
+    {
+      field: "Consulting Rate",
+      values: { "Purchase Order (PO)": "$175/hour", "Vendor Confirmation": "$200/hour" },
+      winner: "Purchase Order — $25/hr savings = $1,000 on 40-hour engagement",
+    },
+    {
+      field: "Late Payment Penalty",
+      values: { "Purchase Order (PO)": "1.5%/month", "Vendor Confirmation": "2.5%/month (compounding)" },
+      winner: "Purchase Order — 1% lower penalty, non-compounding",
+    },
+  ],
+  conflicts: [
+    {
+      id: "c1",
+      type: "Unit Price Discrepancy ($100/unit delta)",
+      severity: "HIGH",
+      documentA: {
+        name: "Demo_PurchaseOrder_GlobalDynamics.pdf",
+        excerpt: "AI Platform License (Annual) — Enterprise Plus | $425.00 | $45,200.00",
+      },
+      documentB: {
+        name: "Demo_VendorConfirmation_TechCorp.pdf",
+        excerpt: "AI Platform License (Annual) — Enterprise Plus | $525.00 | $48,500.00",
+      },
+      explanation:
+        "The PO locks the unit price at $425 based on Quotation QT-2026-0392. The Vendor Confirmation bills $525 and explicitly states this 'supersedes' the quotation. The $100/unit delta generates a $3,300 overcharge on this line alone. TechCorp's claim that the quoted price was 'preliminary' contradicts the quotation's price guarantee clause.",
+      recommendedAction:
+        "Finance team to formally dispute the unit price variance in writing within 5 business days. Reference Quotation QT-2026-0392 and its price guarantee clause. Withhold payment on the $13,144.95 disputed amount pending written resolution from TechCorp VP Sales.",
+    },
+    {
+      id: "c2",
+      type: "Payment Terms Contradiction (Net 60 vs Net 30)",
+      severity: "HIGH",
+      documentA: {
+        name: "Demo_PurchaseOrder_GlobalDynamics.pdf",
+        excerpt: "Payment Terms: Net 60 days from invoice receipt date",
+      },
+      documentB: {
+        name: "Demo_VendorConfirmation_TechCorp.pdf",
+        excerpt: "Payment Terms: Net 30 days from invoice date — STANDARD TERMS APPLY",
+      },
+      explanation:
+        "PO GD-PROC-2024-11 policy mandates Net 60 for all vendor payments. Vendor Confirmation overrides this with Net 30, making Invoice INV-2026-0847 due July 31 rather than August 30. Paying Net 30 on a $112K invoice represents a 30-day early payment worth approximately $470 in opportunity cost at current rates.",
+      recommendedAction:
+        "Legal to issue a written notice asserting Net 60 terms per procurement policy GD-PROC-2024-11. Process payment by August 30, 2026. If TechCorp insists on Net 30, escalate to CFO for written approval before any early payment.",
+    },
+  ],
+  recommendation: {
+    title: "Dispute Invoice — Withhold $13,144.95 Pending Price Reconciliation",
+    summary:
+      "The Vendor Confirmation unlawfully overrides three material terms from the Purchase Order: unit price ($100/unit markup), payment terms (Net 30 vs Net 60), and warranty (12 vs 24 months). The $13,144.95 billing gap has no contractual basis. Industry standard in SaaS procurement is to honor the last signed quotation; TechCorp's claim that prices were 'preliminary' is contradicted by QT-2026-0392's explicit price guarantee. Act before July 17 to avoid auto-renewal on disputed terms.",
+    nextSteps: [
+      "Procurement to send formal price dispute letter citing QT-2026-0392 | Legal team | Within 5 business days",
+      "Finance to withhold the $13,144.95 disputed amount from payment | CFO approval required | Before July 31",
+      "Legal to send contract non-renewal notice before July 17 deadline | General Counsel | Within 7 days",
+      "Schedule renegotiation meeting with TechCorp to align pricing, payment terms, and warranty | Procurement lead | Within 2 weeks",
+    ],
+    confidence: 0.91,
+  },
+  suggestedQuestions: [
+    "What is the exact dollar amount of the overcharge?",
+    "When is the contract auto-renewal deadline?",
+    "Which payment terms should we follow?",
+    "How does the warranty conflict affect our position?",
+    "What should we do before processing payment?",
+  ],
+};
+
+const FALLBACK_MESSAGES: PreSeededMessage[] = [
+  {
+    id: "pm1",
+    role: "user",
+    content: "Which vendor document should we trust for pricing?",
+    timestamp: new Date().toISOString(),
+  },
+  {
+    id: "pm2",
+    role: "assistant",
+    content:
+      "Trust the Purchase Order pricing backed by Quotation QT-2026-0392. The quotation's price guarantee clause locks the AI License at $425/unit. The Vendor Confirmation's claim that this was 'preliminary' is legally weak — the quotation explicitly states prices are guaranteed for 60 days and supersede prior communications. The $525/unit in the Vendor Confirmation represents a 23.5% markup with no contractual basis.",
+    timestamp: new Date().toISOString(),
+    structuredResponse: {
+      answer:
+        "Trust the Purchase Order pricing backed by Quotation QT-2026-0392. The quotation's price guarantee clause locks the AI License at $425/unit. The Vendor Confirmation's claim that this was 'preliminary' is legally weak — the quotation explicitly states prices are guaranteed for 60 days and supersede prior communications. The $525/unit in the Vendor Confirmation represents a 23.5% markup with no contractual basis.",
+      evidence: [
+        {
+          quote: "PRICE GUARANTEE: This quotation is valid for 60 days from issue date. Prices are guaranteed and will not increase during the validity period.",
+          sourceDocument: "Demo_Quotation_TechCorp.pdf",
+          documentType: "pdf",
+        },
+      ],
+      risks: "HIGH: If the Vendor Confirmation's pricing is accepted without dispute, Global Dynamics overpays $13,144.95 with no path to recovery.",
+      recommendation: "Procurement to formally reject the Vendor Confirmation pricing and invoke the price guarantee in QT-2026-0392 within 5 business days.",
+    },
+  },
+];
+
 // AMD-branded loading screen with premium animations
 function DemoLoader() {
   return (
@@ -141,25 +314,29 @@ export default function Demo() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [preSeededMessages, setPreSeededMessages] = useState<PreSeededMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     getDemoData()
       .then((data) => { setDocuments(data.documents); setAnalysis(data.analysis); setPreSeededMessages(data.preSeededMessages ?? []); })
-      .catch((err: unknown) => { setError(err instanceof Error ? err.message : "Failed to load demo data."); })
+      .catch(() => {
+        console.info("[Demo] Backend unavailable — using offline fallback");
+        setDocuments(FALLBACK_DOCUMENTS);
+        setAnalysis(FALLBACK_ANALYSIS);
+        setPreSeededMessages(FALLBACK_MESSAGES);
+      })
       .finally(() => setIsLoading(false));
   }, []);
 
   if (isLoading) return <DemoLoader />;
 
-  if (error || !analysis) {
+  if (!analysis) {
     return (
       <div className="min-h-screen" style={{ background: "var(--ink)" }}>
         <NavigationBar showDemo={false} />
         <div className="flex flex-col items-center pt-24 gap-4 px-4 animate-fadeIn">
           <div className="px-5 py-4 rounded-lg w-full" style={{ maxWidth: "480px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontFamily: "'Inter', sans-serif", fontSize: "14px", color: "var(--error)" }}>
-            {error ?? "Demo data unavailable."}
+            Demo data unavailable.
           </div>
           <Link to="/"><PrimaryButton>Upload your own documents</PrimaryButton></Link>
         </div>
