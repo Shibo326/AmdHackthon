@@ -49,7 +49,7 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     body: formData,
-  }, 30000);
+  }, 120000); // 2 min — Railway needs time to extract text + embed chunks
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
