@@ -155,8 +155,11 @@ class LLMService:
 def _strip_json_fences(text: str) -> str:
     """Remove markdown code fences, thinking tags, and extract JSON from verbose LLM responses."""
     text = text.strip()
-    # Strip <think>...</think> blocks (DeepSeek reasoning models)
+    # Strip <think>...</think> blocks (DeepSeek/Kimi reasoning models)
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = text.strip()
+    # Strip [think]...[/think] variant
+    text = re.sub(r'\[think\].*?\[/think\]', '', text, flags=re.DOTALL)
     text = text.strip()
     # Strip markdown code fences
     if text.startswith("```"):
@@ -178,7 +181,6 @@ def _strip_json_fences(text: str) -> str:
         if json_start >= 0:
             # Find the matching closing bracket
             candidate = text[json_start:]
-            # Try progressively shorter substrings to find valid JSON
             bracket = candidate[0]
             close_bracket = '}' if bracket == '{' else ']'
             # Find the last occurrence of the closing bracket

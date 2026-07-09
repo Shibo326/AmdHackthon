@@ -226,6 +226,12 @@ Return ONLY valid JSON:
         raw = await self.llm_service.complete(system_prompt, merged_prompt)
         raw = _strip_json_fences(raw)
 
+        # Extra safety: if raw still starts with prose (not JSON), find the JSON block
+        if raw and raw[0] not in ('{', '['):
+            brace_idx = raw.find('{')
+            if brace_idx != -1:
+                raw = raw[brace_idx:raw.rfind('}') + 1]
+
         try:
             data = json.loads(raw)
             summary = data.get("executiveSummary", raw)
