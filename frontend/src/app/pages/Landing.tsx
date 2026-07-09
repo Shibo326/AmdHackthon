@@ -342,6 +342,27 @@ export default function Landing() {
           </div>
         )}
 
+        {/* Slow analysis warning for large batches */}
+        {files.length >= 5 && !isLoading && (
+          <motion.div
+            className="mt-3 w-full flex items-start gap-2 px-4 py-3 rounded-lg animate-slideDown"
+            style={{
+              maxWidth: "600px",
+              background: "rgba(245,166,35,0.07)",
+              border: "1px solid rgba(245,166,35,0.25)",
+            }}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <span style={{ fontSize: "14px", flexShrink: 0, marginTop: "1px" }}>⏱️</span>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "13px", lineHeight: 1.5, color: "var(--caution)", margin: 0 }}>
+              <strong style={{ fontWeight: 600 }}>{files.length} files detected.</strong>{" "}
+              Analysis may take <strong style={{ fontWeight: 600 }}>2–4 minutes</strong> for large batches — the AMD MI300X processes all documents in parallel, but more files means more work.
+            </p>
+          </motion.div>
+        )}
+
         {/* Analyze button */}
         {files.length > 0 && !isLoading && (
           <motion.div
@@ -435,6 +456,19 @@ export default function Landing() {
                   }}
                 />
               </div>
+
+              {/* Large batch notice */}
+              {files.length >= 5 && (
+                <div
+                  className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg"
+                  style={{ background: "rgba(245,166,35,0.07)", border: "1px solid rgba(245,166,35,0.2)" }}
+                >
+                  <span style={{ fontSize: "12px", flexShrink: 0 }}>⏱️</span>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--caution)", margin: 0 }}>
+                    Processing {files.length} files — this may take a few minutes. Hang tight!
+                  </p>
+                </div>
+              )}
 
               {/* Stage steps with AnimatePresence */}
               <div className="flex flex-wrap gap-x-4 gap-y-2.5 items-center">
