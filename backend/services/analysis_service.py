@@ -247,34 +247,71 @@ Return ONLY valid JSON:
         user_prompt = build_risk_prompt(chunks)
         # Risks need a larger output budget — may return many items across 8 docs
         raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=3500)
+        logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
+        logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")
 
-        # Robust extraction — try multiple parse strategies
+        import re as _re
         data = None
-        for attempt in [raw, raw[raw.find("{"):raw.rfind("}")+1] if "{" in raw else raw]:
+
+        # Strategy 1: direct parse
+        try:
+            data = json.loads(raw)
+        except Exception:
+            pass
+
+        # Strategy 2: extract outermost { ... } block
+        if data is None:
+            brace_start = raw.find("{")
+            brace_end = raw.rfind("}")
+            if brace_start != -1 and brace_end > brace_start:
+                try:
+                    data = json.loads(raw[brace_start:brace_end + 1])
+                except Exception:
+                    pass
+
+        # Strategy 3: fix trailing commas then retry
+        if data is None:
             try:
-                data = json.loads(attempt)
-                break
+                cleaned = _re.sub(r",\s*([}\]])", r"\1", raw)
+                brace_start = cleaned.find("{")
+                brace_end = cleaned.rfind("}")
+                if brace_start != -1 and brace_end > brace_start:
+                    data = json.loads(cleaned[brace_start:brace_end + 1])
             except Exception:
-                continue
+                pass
+
+        # Strategy 4: extract just the risks array with regex
+        if data is None:
+            array_match = _re.search(r'"risks"\s*:\s*(\[.*?\])', raw, _re.DOTALL)
+            if array_match:
+                try:
+                    risks_array = json.loads(array_match.group(1))
+                    data = {"risks": risks_array}
+                except Exception:
+                    pass
 
         if data is None:
-            # Last resort: fix trailing commas
-            import re
-            cleaned = re.sub(r",\s*([}\]])", r"\1", raw)
-            try:
-                data = json.loads(cleaned)
-            except Exception as e:
-                logger.warning(f"Risk parse failed after all attempts: {e}")
-                return []
+            logger.warning(f"[risks] ALL parse strategies failed. Raw (500 chars): {raw[:500]!r}")
+            return []
 
         risks_data = data.get("risks", []) if isinstance(data, dict) else []
+        logger.info(f"[risks] parsed {len(risks_data)} risk items")
         risks = []
         for item in risks_data:
             try:
+                # Normalize field names — Kimi/DeepSeek may use snake_case
+                if isinstance(item, dict):
+                    item = {
+                        "id": item.get("id", f"r{len(risks)+1}"),
+                        "level": item.get("level", item.get("severity", "MEDIUM")).upper(),
+                        "description": item.get("description", item.get("content", "")),
+                        "sourceDocument": item.get("sourceDocument", item.get("source_document", item.get("source", ""))),
+                        "category": item.get("category", "Operational"),
+                    }
                 risks.append(Risk(**item))
             except Exception as e:
-                logger.warning(f"Skipping malformed risk item: {e}")
+                logger.warning(f"Skipping malformed risk item: {e} — item keys: {list(item.keys()) if isinstance(item, dict) else type(item)}")
         return risks
 
     async def _generate_comparison_matrix(
