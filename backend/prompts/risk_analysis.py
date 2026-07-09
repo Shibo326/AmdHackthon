@@ -89,17 +89,37 @@ _RISK_SIGNALS = re.compile(
 
 def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 8) -> str:
     """
-    Format chunks for risk analysis. Uses up to 8 chunks per doc, prioritizing
-    chunks that contain financial figures, legal obligations, and risk-relevant keywords.
+    Format chunks for risk analysis. Dynamically adjusts chunks-per-doc based on
+    total document count to balance speed vs coverage:
+    - 1 doc:  up to 12 chunks at 1200 chars — full coverage
+    - 2 docs: up to 8 chunks at 1000 chars — balanced
+    - 3 docs: up to 6 chunks at 900 chars — split evenly
+    - 4+ docs: up to 4 chunks at 800 chars — prioritize high-signal chunks
     """
     if not chunks:
         return "(no document content available)"
 
-    # Group chunks by document, preserving order
     from collections import defaultdict
     doc_chunks: dict[str, list[Chunk]] = defaultdict(list)
     for chunk in chunks:
         doc_chunks[chunk.source_document].append(chunk)
+
+    num_docs = len(doc_chunks)
+
+    # Dynamic allocation: more docs = fewer chunks per doc, shorter per chunk
+    if num_docs == 1:
+        max_per_doc = 12
+        max_chars = 1200
+    elif num_docs == 2:
+        max_per_doc = 8
+        max_chars = 1000
+    elif num_docs == 3:
+        max_per_doc = 6
+        max_chars = 900
+    else:
+        # 4+ docs: tighter budget but always prioritize high-risk-signal chunks
+        max_per_doc = max(3, 12 // num_docs)
+        max_chars = 800
 
     sections = []
     for doc_name, doc_chunk_list in doc_chunks.items():
@@ -109,28 +129,44 @@ def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 8) ->
             key=lambda c: len(_RISK_SIGNALS.findall(c.text)),
             reverse=True,
         )
-        selected = scored[:max_chunks_per_doc]
+        selected = scored[:max_per_doc]
         # Re-sort by original position for readability
         selected.sort(key=lambda c: doc_chunk_list.index(c))
 
         sections.append(f"\n=== {doc_name} ===")
         for chunk in selected:
-            sections.append(chunk.text[:1000])
+            sections.append(chunk.text[:max_chars])
 
     return "\n".join(sections)
 
 
 def _format_chunks(chunks: list[Chunk], max_chunks_per_doc: int = 3) -> str:
-    """Format chunks for LLM prompts. Limits to max_chunks_per_doc per document to cap input tokens."""
+    """
+    Format chunks for LLM prompts. Dynamically adjusts per doc count:
+    - 1 doc:  up to 5 chunks — more context for single-doc analysis
+    - 2 docs: up to 3 chunks — balanced
+    - 3+ docs: up to 2 chunks — keep input tight
+    """
     if not chunks:
         return "(no document content available)"
+
+    # Count unique docs
+    unique_docs = list(dict.fromkeys(c.source_document for c in chunks))
+    num_docs = len(unique_docs)
+    if num_docs == 1:
+        effective_max = 5
+    elif num_docs == 2:
+        effective_max = 3
+    else:
+        effective_max = 2
+
     sections = []
     current_doc = None
     doc_chunk_count: dict[str, int] = {}
     for chunk in chunks:
         doc = chunk.source_document
         count = doc_chunk_count.get(doc, 0)
-        if count >= max_chunks_per_doc:
+        if count >= effective_max:
             continue
         doc_chunk_count[doc] = count + 1
         if doc != current_doc:

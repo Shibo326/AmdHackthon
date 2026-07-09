@@ -61,16 +61,31 @@ CONFIDENCE CALIBRATION:
 
 
 def _format_chunks(chunks: list[Chunk], max_chunks_per_doc: int = 3) -> str:
-    """Format chunks for LLM prompts. Limits to max_chunks_per_doc per document to cap input tokens."""
+    """
+    Format chunks for LLM prompts. Dynamically adjusts per doc count:
+    - 1 doc:  up to 5 chunks
+    - 2 docs: up to 3 chunks
+    - 3+ docs: up to 2 chunks
+    """
     if not chunks:
         return "(no document content available)"
+
+    unique_docs = list(dict.fromkeys(c.source_document for c in chunks))
+    num_docs = len(unique_docs)
+    if num_docs == 1:
+        effective_max = 5
+    elif num_docs == 2:
+        effective_max = 3
+    else:
+        effective_max = 2
+
     sections = []
     current_doc = None
     doc_chunk_count: dict[str, int] = {}
     for chunk in chunks:
         doc = chunk.source_document
         count = doc_chunk_count.get(doc, 0)
-        if count >= max_chunks_per_doc:
+        if count >= effective_max:
             continue
         doc_chunk_count[doc] = count + 1
         if doc != current_doc:

@@ -74,13 +74,23 @@ class ConflictEngine:
         document_names: list[str],
     ) -> str:
         """Build a single prompt containing all document excerpts for conflict analysis."""
+        num_docs = len(doc_chunks)
+        # Dynamic chunk allocation per document count
+        if num_docs == 1:
+            max_per_doc, max_chars = 10, 1000
+        elif num_docs == 2:
+            max_per_doc, max_chars = 8, 900
+        elif num_docs == 3:
+            max_per_doc, max_chars = 5, 800
+        else:
+            max_per_doc, max_chars = max(3, 12 // num_docs), 700
+
         sections = []
         for i, doc_name in enumerate(document_names, 1):
             chunks = doc_chunks.get(doc_name, [])
             if not chunks:
                 continue
-            # Take up to 8 chunks, 900 chars each — enough for conflict detection
-            content = "\n".join(c.text[:900] for c in chunks[:8])
+            content = "\n".join(c.text[:max_chars] for c in chunks[:max_per_doc])
             sections.append(f"=== DOCUMENT {i}: {doc_name} ===\n{content}")
 
         all_docs_content = "\n\n".join(sections)
