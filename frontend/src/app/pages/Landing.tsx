@@ -10,9 +10,10 @@ import {
   Zap,
   CheckCircle,
   Loader,
+  RefreshCw,
 } from "lucide-react";
 import { Link } from "react-router";
-import { uploadDocuments, analyzeDocuments } from "../../lib/api";
+import { uploadDocuments, analyzeDocuments, warmupServer } from "../../lib/api";
 import { toast } from "sonner";
 import { useAppDispatch, useAppState } from "../../lib/store";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,6 +28,14 @@ const LOADING_STAGES = [
   { label: "Building report", icon: "📊" },
 ];
 
+// Dynamic status messages shown during long waits
+const SLOW_MESSAGES = [
+  { afterSeconds: 20, message: "Server is warming up — hang tight..." },
+  { afterSeconds: 40, message: "Still running — AMD MI300X is processing your documents..." },
+  { afterSeconds: 70, message: "Almost there — large documents take a bit longer..." },
+  { afterSeconds: 100, message: "This is taking longer than usual. Please wait..." },
+];
+
 export default function Landing() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -38,9 +47,15 @@ export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [slowMessage, setSlowMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [benchmarkLabel, setBenchmarkLabel] = useState<string>("AMD MI300X");
   const [benchmarkSub, setBenchmarkSub] = useState<string>("GPU-Accelerated");
+
+  // Warmup backend on page load — prevents Railway cold-start delay when user clicks Analyze
+  useEffect(() => {
+    warmupServer();
+  }, []);
 
   // If user navigates back and has an active session, redirect to dashboard
   useEffect(() => {
@@ -147,6 +162,7 @@ export default function Landing() {
     setError(null);
     setIsLoading(true);
     setElapsedSeconds(0);
+    setSlowMessage(null);
 
     // Only RESET if we're starting fresh (no pending session to recover)
     if (!pendingSessionId) {
@@ -156,7 +172,13 @@ export default function Landing() {
 
     // Start elapsed timer
     const timerInterval = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        // Update slow message based on elapsed time
+        const msg = [...SLOW_MESSAGES].reverse().find((m) => next >= m.afterSeconds);
+        setSlowMessage(msg?.message ?? null);
+        return next;
+      });
     }, 1000);
 
     const stageTimers = [
@@ -168,59 +190,83 @@ export default function Landing() {
 
     const toastId = toast.loading('Analyzing documents with AI...');
 
-    try {
-      let currentSessionId = pendingSessionId;
-
-      // Only upload if we don't have a pending session already
-      if (!currentSessionId) {
-        const uploadResult = await uploadDocuments(files);
-        stageTimers.forEach(clearTimeout);
-        setLoadingStage(2);
-        currentSessionId = uploadResult.sessionId;
-        dispatch({ type: "SET_SESSION", payload: currentSessionId });
-        dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
-        // Save the session so if connection drops, we can retry without re-uploading
-        setPendingSessionId(currentSessionId);
-      } else {
-        // Recovery path — upload already done, skip straight to analysis
-        stageTimers.forEach(clearTimeout);
-        setLoadingStage(2);
-        toast.loading('Reconnected — resuming analysis...', { id: toastId });
-      }
-
-      const analyzeResult = await analyzeDocuments(currentSessionId);
-      if (!analyzeResult.analysis) {
-        throw new Error("Analysis returned empty — please try again");
-      }
-      dispatch({ type: "SET_ANALYSIS", payload: analyzeResult.analysis });
-      // Clear pending session on success
-      setPendingSessionId(null);
-      clearInterval(timerInterval);
-      toast.dismiss(toastId);
-      setIsLoading(false);
-      navigate("/dashboard");
-    } catch (err) {
+    const cleanup = () => {
       stageTimers.forEach(clearTimeout);
       clearInterval(timerInterval);
       toast.dismiss(toastId);
+    };
+
+    const doAnalyze = async (isRetry = false): Promise<boolean> => {
+      try {
+        let currentSessionId = pendingSessionId;
+
+        // Only upload if we don't have a pending session already
+        if (!currentSessionId) {
+          const uploadResult = await uploadDocuments(files);
+          stageTimers.forEach(clearTimeout);
+          setLoadingStage(2);
+          currentSessionId = uploadResult.sessionId;
+          dispatch({ type: "SET_SESSION", payload: currentSessionId });
+          dispatch({ type: "SET_DOCUMENTS", payload: uploadResult.documents });
+          setPendingSessionId(currentSessionId);
+        } else {
+          stageTimers.forEach(clearTimeout);
+          setLoadingStage(2);
+          if (isRetry) {
+            toast.loading('Reconnected — resuming analysis...', { id: toastId });
+          } else {
+            toast.loading('Reconnected — resuming analysis...', { id: toastId });
+          }
+        }
+
+        const analyzeResult = await analyzeDocuments(currentSessionId);
+        if (!analyzeResult.analysis) {
+          throw new Error("Analysis returned empty — please try again");
+        }
+        dispatch({ type: "SET_ANALYSIS", payload: analyzeResult.analysis });
+        setPendingSessionId(null);
+        return true;
+      } catch (err) {
+        const rawMsg = err instanceof Error ? err.message : "Something went wrong.";
+        const lower = rawMsg.toLowerCase();
+        const isTimeout = lower.includes("timed out") || lower.includes("timeout");
+        const isNetwork = lower.includes("network") || lower.includes("fetch") || lower.includes("failed to fetch");
+
+        // Auto-retry once on timeout/network errors (only on first attempt)
+        if (!isRetry && (isTimeout || isNetwork) && pendingSessionId) {
+          toast.loading('Connection dropped — auto-retrying...', { id: toastId });
+          setSlowMessage("Connection dropped — retrying automatically...");
+          await new Promise((r) => setTimeout(r, 3000));
+          return doAnalyze(true);
+        }
+        throw err;
+      }
+    };
+
+    try {
+      const success = await doAnalyze();
+      if (success) {
+        cleanup();
+        setIsLoading(false);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      cleanup();
       const rawMsg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
       const lower = rawMsg.toLowerCase();
       let msg: string;
       let toastMsg: string;
 
-      // If upload already succeeded (pendingSessionId exists), this is an analysis error
-      // Don't clear pendingSessionId — user can retry without re-uploading
       if (lower.includes("timed out") || lower.includes("timeout")) {
         if (pendingSessionId) {
           msg = "Connection dropped during analysis — your documents are still uploaded. Click 'Retry Analysis' to continue without re-uploading.";
         } else {
-          msg = "Analysis is taking longer than expected. Railway may be warming up — please try again in 30 seconds.";
+          msg = "Analysis is taking longer than expected. The server may have been sleeping — click 'Retry Analysis' to try again (your files stay uploaded).";
         }
-        toastMsg = "Connection timeout — click Retry to resume";
+        toastMsg = "Timeout — click Retry to resume";
       } else if (lower.includes("rate") || lower.includes("429") || lower.includes("quota")) {
         msg = "AI service is busy right now. Please wait 60 seconds and try again.";
         toastMsg = msg;
-        // Clear pending session on rate limit — backend may have partially run
         setPendingSessionId(null);
       } else if (lower.includes("upload") || lower.includes("413")) {
         msg = "Upload failed — check that your files are valid PDFs or images under 10MB.";
@@ -239,6 +285,7 @@ export default function Landing() {
         setPendingSessionId(null);
       }
       setError(msg);
+      setSlowMessage(null);
       toast.error(toastMsg);
       setIsLoading(false);
     }
@@ -431,10 +478,41 @@ export default function Landing() {
         {/* Error */}
         {error && (
           <div
-            className="mt-3 px-4 py-3 rounded-lg w-full animate-slideDown"
-            style={{ maxWidth: "600px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontFamily: "'Inter', sans-serif", fontSize: "14px", color: "var(--error)" }}
+            className="mt-3 w-full animate-slideDown"
+            style={{ maxWidth: "600px" }}
           >
-            {error}
+            <div
+              className="px-4 py-3 rounded-lg"
+              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", fontFamily: "'Inter', sans-serif", fontSize: "14px", color: "var(--error)" }}
+            >
+              {error}
+            </div>
+            {/* Retry button — only shown when upload already succeeded */}
+            {pendingSessionId && (
+              <motion.button
+                onClick={handleAnalyze}
+                className="mt-3 w-full flex items-center justify-center gap-2"
+                style={{
+                  height: "48px",
+                  borderRadius: "var(--radius-btn)",
+                  background: "rgba(245,166,35,0.08)",
+                  border: "1px solid rgba(245,166,35,0.4)",
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontWeight: 700,
+                  fontSize: "15px",
+                  color: "var(--caution)",
+                }}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <RefreshCw size={15} />
+                Retry Analysis — documents still uploaded
+              </motion.button>
+            )}
           </div>
         )}
 
@@ -456,38 +534,6 @@ export default function Landing() {
               <strong style={{ fontWeight: 600 }}>{files.length} files detected.</strong>{" "}
               Analysis may take <strong style={{ fontWeight: 600 }}>2–4 minutes</strong> for large batches — the AMD MI300X processes all documents in parallel, but more files means more work.
             </p>
-          </motion.div>
-        )}
-
-        {/* Retry Analysis button — shown when connection dropped after upload succeeded */}
-        {pendingSessionId && !isLoading && (
-          <motion.div
-            className="mt-4 w-full animate-slideUp"
-            style={{ maxWidth: "600px" }}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <button
-              onClick={handleAnalyze}
-              style={{
-                width: "100%",
-                height: "48px",
-                borderRadius: "var(--radius-btn)",
-                background: "rgba(245,166,35,0.08)",
-                border: "1px solid rgba(245,166,35,0.35)",
-                cursor: "pointer",
-                fontFamily: "'DM Sans', sans-serif",
-                fontWeight: 700,
-                fontSize: "15px",
-                color: "var(--caution)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-              }}
-            >
-              ↺ Retry Analysis — documents still uploaded, no re-upload needed
-            </button>
           </motion.div>
         )}
 
@@ -582,17 +628,26 @@ export default function Landing() {
                 />
               </div>
 
-              {/* Large batch notice */}
-              {files.length >= 5 && (
-                <div
-                  className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg"
-                  style={{ background: "rgba(245,166,35,0.07)", border: "1px solid rgba(245,166,35,0.2)" }}
-                >
-                  <span style={{ fontSize: "12px", flexShrink: 0 }}>⏱️</span>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--caution)", margin: 0 }}>
-                    Processing {files.length} files — this may take a few minutes. Hang tight!
-                  </p>
-                </div>
+              {/* Dynamic slow-connection / status message */}
+              {(slowMessage || files.length >= 5) && (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={slowMessage ?? "batch-notice"}
+                    className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg"
+                    style={{ background: "rgba(245,166,35,0.07)", border: "1px solid rgba(245,166,35,0.2)" }}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <span style={{ fontSize: "12px", flexShrink: 0 }}>⏱️</span>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--caution)", margin: 0 }}>
+                      {slowMessage
+                        ? slowMessage
+                        : `Processing ${files.length} files — this may take a few minutes. Hang tight!`}
+                    </p>
+                  </motion.div>
+                </AnimatePresence>
               )}
 
               {/* Stage steps with AnimatePresence */}

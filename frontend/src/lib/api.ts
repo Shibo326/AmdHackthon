@@ -49,7 +49,7 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     body: formData,
-  }, 120000); // 2 min — Railway needs time to extract text + embed chunks
+  }, 180000); // 3 min — allow time for Railway cold start + extraction + embedding
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -73,7 +73,7 @@ export async function analyzeDocuments(sessionId: string): Promise<AnalyzeRespon
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
-  }, 120000);
+  }, 180000); // 3 min — analysis runs 5 parallel LLM calls, may take up to 2.5min
 
   console.log(`[API] POST ${url} → ${response.status}`);
 
@@ -280,6 +280,19 @@ export function streamChatMessage(
   })();
 
   return { abort: () => controller.abort(), promise };
+}
+
+/**
+ * Ping the backend to wake Railway from cold-start before the user clicks Analyze.
+ * Fire-and-forget — never throws, never blocks.
+ * GET /api/warmup
+ */
+export async function warmupServer(): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/api/warmup`, { method: 'GET' });
+  } catch {
+    // Silently ignore — warmup is best-effort
+  }
 }
 
 /**

@@ -80,8 +80,18 @@ async def suggest_questions(request: Request, body: AnalyzeRequest):
     return JSONResponse(content={"questions": questions})
 
 
+@router.get("/warmup")
+async def warmup():
+    """
+    Lightweight wake-up endpoint — called by the frontend on page load to prevent
+    Railway cold-start delays when the user clicks Analyze.
+    Returns instantly; just having the server handle a request is enough to wake it.
+    """
+    return {"status": "warm", "service": "clausify-api"}
+
+
 @router.post("/analyze")
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def analyze_documents(request: Request, body: AnalyzeRequest):
     """
     Run full AI analysis on all documents in a session.
