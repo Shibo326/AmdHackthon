@@ -79,8 +79,8 @@ class ConflictEngine:
             chunks = doc_chunks.get(doc_name, [])
             if not chunks:
                 continue
-            # Take first 3 chunks, truncated to 800 chars each — caps input tokens across many docs
-            content = "\n".join(c.text[:800] for c in chunks[:3])
+            # Take up to 8 chunks, 1000 chars each — more coverage for tables & pricing data
+            content = "\n".join(c.text[:1000] for c in chunks[:8])
             sections.append(f"=== DOCUMENT {i}: {doc_name} ===\n{content}")
 
         all_docs_content = "\n\n".join(sections)
