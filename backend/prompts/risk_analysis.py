@@ -108,18 +108,18 @@ def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 8) ->
 
     # Dynamic allocation: more docs = fewer chunks per doc, shorter per chunk
     if num_docs == 1:
-        max_per_doc = 12
-        max_chars = 1200
-    elif num_docs == 2:
         max_per_doc = 8
         max_chars = 1000
-    elif num_docs == 3:
-        max_per_doc = 6
+    elif num_docs == 2:
+        max_per_doc = 5
         max_chars = 900
+    elif num_docs == 3:
+        max_per_doc = 4
+        max_chars = 800
     else:
         # 4+ docs: tighter budget but always prioritize high-risk-signal chunks
-        max_per_doc = max(3, 12 // num_docs)
-        max_chars = 800
+        max_per_doc = max(2, 8 // num_docs)
+        max_chars = 700
 
     sections = []
     for doc_name, doc_chunk_list in doc_chunks.items():

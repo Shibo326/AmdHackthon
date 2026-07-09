@@ -21,7 +21,7 @@ from services.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # Timeout for individual LLM calls (seconds)
-LLM_CALL_TIMEOUT = 90
+LLM_CALL_TIMEOUT = 75
 
 # Prompt for comparison matrix — adapts to any document type with deep analytical reasoning
 COMPARISON_MATRIX_PROMPT = """Based on the document content above, create a detailed comparison matrix that a decision-maker can use to make an immediate choice.
@@ -252,7 +252,7 @@ Return ONLY valid JSON:
         """Generate risk analysis list."""
         user_prompt = build_risk_prompt(chunks)
         # Risks need a larger output budget — may return many items across 8 docs
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=3500)
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=2500)
         logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
         logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")
