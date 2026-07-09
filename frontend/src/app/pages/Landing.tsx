@@ -262,7 +262,7 @@ export default function Landing() {
           }}
         >
           Upload contracts, quotations, and invoices. Ask anything in plain
-          language. Get evidence-based decisions in under 60 seconds — powered
+          language. Get evidence-based decisions in under 90 seconds — powered
           by AMD Instinct MI300X.
         </p>
 
@@ -272,7 +272,7 @@ export default function Landing() {
           style={{ animationDelay: "0.15s" }}
         >
           {[
-            { value: "< 60s", label: "Analysis time", color: "var(--paper)" },
+            { value: "< 90s", label: "Analysis time", color: "var(--paper)" },
             { value: benchmarkLabel, label: benchmarkSub, color: "var(--volt)" },
             { value: "100%", label: "Evidence-based", color: "var(--paper)" },
           ].map((stat, i) => (
