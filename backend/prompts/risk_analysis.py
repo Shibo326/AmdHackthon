@@ -87,9 +87,9 @@ _RISK_SIGNALS = re.compile(
 )
 
 
-def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 5) -> str:
+def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 8) -> str:
     """
-    Format chunks for risk analysis. Uses up to 5 chunks per doc, prioritizing
+    Format chunks for risk analysis. Uses up to 8 chunks per doc, prioritizing
     chunks that contain financial figures, legal obligations, and risk-relevant keywords.
     """
     if not chunks:
@@ -109,14 +109,13 @@ def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 5) ->
             key=lambda c: len(_RISK_SIGNALS.findall(c.text)),
             reverse=True,
         )
-        # Take top N by risk signal score, but limit per doc
         selected = scored[:max_chunks_per_doc]
-        # Re-sort by original position for readability (preserve document flow)
+        # Re-sort by original position for readability
         selected.sort(key=lambda c: doc_chunk_list.index(c))
 
         sections.append(f"\n=== {doc_name} ===")
         for chunk in selected:
-            sections.append(chunk.text[:800])
+            sections.append(chunk.text[:1000])
 
     return "\n".join(sections)
 
