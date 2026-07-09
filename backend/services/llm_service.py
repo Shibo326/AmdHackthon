@@ -31,8 +31,7 @@ class LLMService:
 
     Performance optimizations applied:
     - Persistent httpx.AsyncClient with connection pooling (avoids TCP handshake per call)
-    - Fireworks 'fast' speed tier for higher generated-token throughput
-    - Tuned temperatures (0.1 for structured JSON, 0.3 for prose)
+    - Tuned temperatures (0.1 for structured JSON outputs)
     - Reduced max_tokens where safe to do so
     """
 
@@ -113,8 +112,6 @@ class LLMService:
             "temperature": temperature,
             "top_p": 0.9,
             "frequency_penalty": 0.3,
-            # Fireworks 'fast' tier: higher generated-token throughput on shared serverless
-            "speed": "fast",
         }
 
         try:
