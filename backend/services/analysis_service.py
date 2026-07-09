@@ -216,7 +216,7 @@ Return ONLY valid JSON:
 }''',
         )
 
-        raw = await self.llm_service.complete(system_prompt, merged_prompt)
+        raw = await self.llm_service.complete(system_prompt, merged_prompt, max_tokens=1000)
         raw = _strip_json_fences(raw)
 
         # Extra safety: if raw still starts with prose (not JSON), find the JSON block
@@ -388,7 +388,7 @@ DOCUMENT CONTEXT:
     ) -> Recommendation:
         """Generate procurement recommendation."""
         user_prompt = build_recommendation_prompt(chunks)
-        raw = await self.llm_service.complete(system_prompt, user_prompt)
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=800)
         raw = _strip_json_fences(raw)
 
         try:

@@ -56,7 +56,7 @@ class ConflictEngine:
 
         try:
             raw = await self.llm_service.complete(
-                system_prompt, prompt, max_tokens=2048
+                system_prompt, prompt, max_tokens=1500
             )
             raw = _strip_json_fences(raw)
             conflicts = self._parse_conflicts(raw)
@@ -75,15 +75,15 @@ class ConflictEngine:
     ) -> str:
         """Build a single prompt containing all document excerpts for conflict analysis."""
         num_docs = len(doc_chunks)
-        # Dynamic chunk allocation per document count
+        # Dynamic chunk allocation per document count — balanced for speed vs coverage
         if num_docs == 1:
-            max_per_doc, max_chars = 10, 1000
+            max_per_doc, max_chars = 6, 800
         elif num_docs == 2:
-            max_per_doc, max_chars = 8, 900
+            max_per_doc, max_chars = 5, 700
         elif num_docs == 3:
-            max_per_doc, max_chars = 5, 800
+            max_per_doc, max_chars = 4, 650
         else:
-            max_per_doc, max_chars = max(3, 12 // num_docs), 700
+            max_per_doc, max_chars = max(2, 10 // num_docs), 600
 
         sections = []
         for i, doc_name in enumerate(document_names, 1):
