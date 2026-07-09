@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { useAppDispatch } from "../../lib/store";
 import { motion, AnimatePresence } from "framer-motion";
 
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
 const LOADING_STAGES = [
   { label: "Extracting text", icon: "📄" },
   { label: "AMD embeddings", icon: "⚡" },
@@ -36,6 +38,38 @@ export default function Landing() {
   const [loadingStage, setLoadingStage] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [benchmarkLabel, setBenchmarkLabel] = useState<string>("AMD MI300X");
+  const [benchmarkSub, setBenchmarkSub] = useState<string>("GPU-Accelerated");
+
+  // Fetch live AMD benchmark on mount (non-blocking, best-effort)
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    fetch(`${API_BASE}/api/benchmark`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        clearTimeout(timeout);
+        const ratio = data?.speedup_ratio;
+        if (ratio && typeof ratio === "number" && ratio > 1) {
+          setBenchmarkLabel(`${ratio.toFixed(1)}×`);
+          setBenchmarkSub("Faster on AMD MI300X");
+        }
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        // Silently fall back to static label — benchmark is optional
+      });
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -239,7 +273,7 @@ export default function Landing() {
         >
           {[
             { value: "< 60s", label: "Analysis time", color: "var(--paper)" },
-            { value: "AMD MI300X", label: "GPU-Accelerated", color: "var(--volt)" },
+            { value: benchmarkLabel, label: benchmarkSub, color: "var(--volt)" },
             { value: "100%", label: "Evidence-based", color: "var(--paper)" },
           ].map((stat, i) => (
             <div key={i} className="flex items-center">
