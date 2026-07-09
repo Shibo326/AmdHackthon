@@ -129,7 +129,7 @@ async def health_check():
         "service": "clausify-api",
         "version": "1.0.0",
         "provider": "fireworks",
-        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct"),
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -141,7 +141,7 @@ async def provider_info():
     return {
         "provider": "fireworks",
         "isAMD": True,
-        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct"),
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
         "endpoint": endpoint[:40] + "..." if endpoint else None,
     }
 

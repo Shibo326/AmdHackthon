@@ -50,7 +50,7 @@ class LLMService:
                 "FIREWORKS_ENDPOINT is required. "
                 "Set it in your .env file or Railway environment variables."
             )
-        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct")
+        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b")
 
         # Persistent async HTTP client — avoids TCP handshake overhead on every call.
         # limits: 20 keepalive connections, up to 100 concurrent (covers our 5 parallel calls easily).
