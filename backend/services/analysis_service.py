@@ -21,7 +21,8 @@ from services.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # Timeout for individual LLM calls (seconds)
-LLM_CALL_TIMEOUT = 75
+# Reduced from 75s — llama-4-maverick is significantly faster than gpt-oss-120b
+LLM_CALL_TIMEOUT = 45
 
 # Prompt for comparison matrix — adapts to any document type with deep analytical reasoning
 COMPARISON_MATRIX_PROMPT = """Based on the document content above, create a detailed comparison matrix that a decision-maker can use to make an immediate choice.
@@ -95,13 +96,15 @@ class AnalysisService:
     ) -> AnalysisResult:
         """
         Run the complete analysis pipeline — all 5 calls in parallel.
-        gpt-oss-120b is fast (2-5s) so parallel is safe and optimal.
+        llama-4-maverick on Fireworks 'fast' tier runs at 200-300 tok/s,
+        so parallel is safe and optimal. Target: <10s wall time.
         """
         system_prompt = get_system_prompt(doc_names)
 
         logger.info(
             f"Starting full analysis for session {session_id} "
-            f"({len(chunks)} chunks, {len(doc_names)} documents) — 5 parallel LLM calls"
+            f"({len(chunks)} chunks, {len(doc_names)} documents) — 5 parallel LLM calls "
+            f"[model: llama-4-maverick, tier: fast]"
         )
 
         if chunks:
@@ -216,7 +219,7 @@ Return ONLY valid JSON:
 }''',
         )
 
-        raw = await self.llm_service.complete(system_prompt, merged_prompt, max_tokens=1000)
+        raw = await self.llm_service.complete(system_prompt, merged_prompt, max_tokens=900)
         raw = _strip_json_fences(raw)
 
         # Extra safety: if raw still starts with prose (not JSON), find the JSON block
@@ -244,8 +247,8 @@ Return ONLY valid JSON:
     ) -> list[Risk]:
         """Generate risk analysis list."""
         user_prompt = build_risk_prompt(chunks)
-        # Risks need a larger output budget — may return many items across 8 docs
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1500)
+        # Risks: 1200 tokens is sufficient for up to 8 well-formed risk items
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1200)
         logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
         logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")

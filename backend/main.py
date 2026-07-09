@@ -129,7 +129,7 @@ async def health_check():
         "service": "clausify-api",
         "version": "1.0.0",
         "provider": "fireworks",
-        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -141,7 +141,7 @@ async def provider_info():
     return {
         "provider": "fireworks",
         "isAMD": True,
-        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
+        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct"),
         "endpoint": endpoint[:40] + "..." if endpoint else None,
     }
 
@@ -200,6 +200,9 @@ async def startup_event():
         docx_generator = DOCXGenerator()
         logger.info("DOCXGenerator initialized")
 
+        # Store llm_service globally for shutdown hook
+        app.state.llm_service = llm_service
+
         # --- Inject services into routers ---
         upload._document_parser = document_parser
         upload._embedding_service = embedding_service
@@ -225,6 +228,19 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         logger.exception("Startup exception details:")
+
+
+# ---- Shutdown Event ----
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close persistent HTTP connections on graceful shutdown."""
+    logger.info("Clausify AI Backend shutting down...")
+    if hasattr(app.state, "llm_service"):
+        try:
+            await app.state.llm_service.aclose()
+            logger.info("LLMService HTTP client closed")
+        except Exception as e:
+            logger.warning(f"LLMService cleanup failed (non-fatal): {e}")
 
 
 # ---- Entry Point ----

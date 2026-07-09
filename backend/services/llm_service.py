@@ -28,6 +28,12 @@ class LLMService:
     """
     LLM service using Fireworks AI (AMD Instinct MI300X hardware).
     All inference runs on AMD MI300X via the Fireworks platform.
+
+    Performance optimizations applied:
+    - Persistent httpx.AsyncClient with connection pooling (avoids TCP handshake per call)
+    - Fireworks 'fast' speed tier for higher generated-token throughput
+    - Tuned temperatures (0.1 for structured JSON, 0.3 for prose)
+    - Reduced max_tokens where safe to do so
     """
 
     def __init__(self):
@@ -44,17 +50,25 @@ class LLMService:
                 "FIREWORKS_ENDPOINT is required. "
                 "Set it in your .env file or Railway environment variables."
             )
-        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b")
+        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-4-maverick-instruct")
+
+        # Persistent async HTTP client — avoids TCP handshake overhead on every call.
+        # limits: 20 keepalive connections, up to 100 concurrent (covers our 5 parallel calls easily).
+        self._client = httpx.AsyncClient(
+            timeout=100.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+        )
+
         logger.info(f"Fireworks AI configured: endpoint={self._endpoint[:30]}...")
         logger.info(f"Fireworks Model: {self._model}")
-        logger.info(f"LLMService initialized (Fireworks/AMD, model: {self._model})")
+        logger.info(f"LLMService initialized (Fireworks/AMD, model: {self._model}, persistent client)")
 
     async def complete(
         self,
         system_prompt: str,
         user_prompt: str,
         max_tokens: int = MAX_TOKENS_DEFAULT,
-        temperature: float = 0.3,
+        temperature: float = 0.1,
     ) -> str:
         """Send a completion request to Fireworks AI with automatic rate-limit retry."""
         for attempt in range(3):
@@ -72,6 +86,10 @@ class LLMService:
                     raise
         raise LLMRateLimitError("Max retries exceeded")
 
+    async def aclose(self) -> None:
+        """Close the persistent HTTP client. Call on app shutdown."""
+        await self._client.aclose()
+
     async def _call_fireworks(
         self,
         system_prompt: str,
@@ -79,7 +97,7 @@ class LLMService:
         max_tokens: int,
         temperature: float,
     ) -> str:
-        """Execute a single Fireworks AI completion request."""
+        """Execute a single Fireworks AI completion request using the persistent client."""
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -95,21 +113,22 @@ class LLMService:
             "temperature": temperature,
             "top_p": 0.9,
             "frequency_penalty": 0.3,
+            # Fireworks 'fast' tier: higher generated-token throughput on shared serverless
+            "speed": "fast",
         }
 
-        async with httpx.AsyncClient(timeout=100.0) as client:
-            try:
-                response = await client.post(
-                    f"{self._endpoint}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                exc_str = str(exc).lower()
-                if "429" in exc_str or "rate limit" in exc_str:
-                    raise LLMRateLimitError(f"Fireworks rate limit: {exc}") from exc
-                raise
+        try:
+            response = await self._client.post(
+                f"{self._endpoint}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            exc_str = str(exc).lower()
+            if "429" in exc_str or "rate limit" in exc_str:
+                raise LLMRateLimitError(f"Fireworks rate limit: {exc}") from exc
+            raise
 
         data = response.json()
         content = data["choices"][0]["message"]["content"]

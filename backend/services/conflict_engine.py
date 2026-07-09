@@ -54,9 +54,10 @@ class ConflictEngine:
             f"Running consolidated conflict detection across {len(document_names)} documents (1 LLM call)"
         )
 
+        # Conflict detection: 1200 tokens — sufficient for up to 6 well-formed conflicts
         try:
             raw = await self.llm_service.complete(
-                system_prompt, prompt, max_tokens=1500
+                system_prompt, prompt, max_tokens=1200
             )
             raw = _strip_json_fences(raw)
             conflicts = self._parse_conflicts(raw)

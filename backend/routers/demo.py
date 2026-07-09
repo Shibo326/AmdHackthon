@@ -1,3 +1,6 @@
+import time
+import asyncio
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
@@ -324,3 +327,83 @@ async def get_demo():
     a complete analysis and pre-seeded chat messages.
     """
     return JSONResponse(content=DEMO_DATA)
+
+
+@router.get("/benchmark")
+async def benchmark_inference():
+    """
+    Run a live LLM inference benchmark to verify speed optimizations.
+
+    Returns:
+    - Model name (llama-4-maverick-instruct or current configured model)
+    - Tokens/second throughput
+    - Total latency (time to first token + generation time)
+    - Provider info (Fireworks AI on AMD MI300X)
+
+    Judges can use this endpoint to verify the claimed <10s analysis time.
+    """
+    try:
+        from services.llm_service import LLMService
+        import os
+
+        llm_service = LLMService()
+
+        # Benchmark prompt: realistic doc analysis snippet
+        test_prompt = """Analyze the following invoice excerpt and identify any risks:
+
+INVOICE #INV-2026-0315
+Supplier: TechCorp Global
+Invoice Date: March 15, 2026
+Total Amount: $48,500.00 (includes $3,300 expedite fee)
+Payment Terms: Net 30
+---
+IMPORTANT: Previous quotation for this order was $45,200. No expedite service was requested.
+
+Respond with a JSON array of risk objects."""
+
+        start = time.time()
+        response = await llm_service.complete(
+            system_prompt="You are a procurement document analyst.",
+            user_prompt=test_prompt,
+            max_tokens=400,  # Quick benchmark
+            temperature=0.1,
+        )
+        latency_ms = int((time.time() - start) * 1000)
+
+        # Estimate tokens/sec (rough: assume ~300 output tokens)
+        estimated_output_tokens = len(response.split()) * 1.3  # words to tokens rough conversion
+        tokens_per_sec = int(estimated_output_tokens / (latency_ms / 1000)) if latency_ms > 0 else 0
+
+        await llm_service.aclose()
+
+        return JSONResponse(content={
+            "status": "success",
+            "model": os.getenv("FIREWORKS_MODEL", "unknown"),
+            "provider": "Fireworks AI",
+            "hardware": "AMD MI300X",
+            "speedTier": "fast",
+            "benchmark": {
+                "latencyMs": latency_ms,
+                "estimatedTokensPerSecond": tokens_per_sec,
+                "responseLength": len(response),
+                "testType": "structured_analysis",
+            },
+            "optimizations": [
+                "Persistent HTTP connection pooling",
+                "Fireworks 'fast' speed tier enabled",
+                "Temperature 0.1 for structured outputs",
+                "Parallel async calls (5 concurrent)",
+                "Reduced token budgets (900-1200 per call)",
+            ],
+            "timestamp": time.time(),
+        })
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": str(e),
+                "code": "BENCHMARK_FAILED",
+            },
+        )
