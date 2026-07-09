@@ -44,7 +44,7 @@ class LLMService:
                 "FIREWORKS_ENDPOINT is required. "
                 "Set it in your .env file or Railway environment variables."
             )
-        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/deepseek-v4-flash")
+        self._model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2p6")
         logger.info(f"Fireworks AI configured: endpoint={self._endpoint[:30]}...")
         logger.info(f"Fireworks Model: {self._model}")
         logger.info(f"LLMService initialized (Fireworks/AMD, model: {self._model})")
