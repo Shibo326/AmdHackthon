@@ -3,7 +3,7 @@ import { NavigationBar, AMDBadge } from "../components/NavigationBar";
 import { Card } from "../components/Card";
 import { RiskBadge, EvidenceTag, EvidenceBox } from "../components/Badges";
 import { PrimaryButton, GhostButton } from "../components/Buttons";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import { sanitizeText } from "../../lib/sanitize";
 
 export default function Dashboard() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { sessionId, documents, analysis } = useAppState();
 
   const [conflictExpanded, setConflictExpanded] = useState(true); // default open so judges see it
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [liveSpeedup, setLiveSpeedup] = useState<string>("5.6×");
+  const [confirmNewSession, setConfirmNewSession] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -189,9 +191,34 @@ export default function Dashboard() {
             <GhostButton style={{ width: "100%", height: "36px" }}>Upload More</GhostButton>
           </Link>
           <div className="text-center">
-            <button onClick={() => dispatch({ type: "RESET" })} style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", background: "none", border: "none", cursor: "pointer" }}>
-              New Session
-            </button>
+            {confirmNewSession ? (
+              <div className="flex flex-col gap-2 px-1">
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ash)" }}>
+                  Are you sure? This clears all analysis.
+                </span>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={() => { dispatch({ type: "RESET" }); navigate("/"); }}
+                    style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 600, color: "var(--paper)", background: "var(--error)", border: "none", cursor: "pointer", padding: "4px 10px", borderRadius: "6px" }}
+                  >
+                    Yes, clear
+                  </button>
+                  <button
+                    onClick={() => setConfirmNewSession(false)}
+                    style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", background: "none", border: "1px solid var(--rule)", cursor: "pointer", padding: "4px 10px", borderRadius: "6px" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmNewSession(true)}
+                style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", fontWeight: 500, color: "var(--ghost)", background: "none", border: "none", cursor: "pointer" }}
+              >
+                New Session
+              </button>
+            )}
           </div>
           <div className="flex justify-center pt-1"><AMDBadge /></div>
         </div>

@@ -15,6 +15,8 @@ import {
   Download,
   ChevronDown,
   FileDown,
+  Copy,
+  Check,
 } from "lucide-react";
 import { streamChatMessage, getSuggestedQuestions, exportReport } from "../../lib/api";
 import { useAppState } from "../../lib/store";
@@ -24,12 +26,12 @@ import type { StructuredAIResponse } from "../../lib/types";
 import { sanitizeText } from "../../lib/sanitize";
 
 const fallbackQuestions = [
-  "Summarize this document",
-  "What are the key points?",
-  "Any concerns?",
-  "What should I do next?",
-  "What's missing?",
-  "Compare the options",
+  "What are the payment terms?",
+  "Are there any high-risk clauses?",
+  "What conflicts exist between documents?",
+  "Which supplier offers better terms?",
+  "What are the termination conditions?",
+  "Summarize the key financial obligations",
 ];
 
 interface UserMessage {
@@ -63,6 +65,7 @@ export default function Chat() {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [inputShake, setInputShake] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -617,6 +620,22 @@ export default function Chat() {
                           <div style={{ flex: 1, height: "1px", background: "var(--rule)" }} />
                         </div>
                         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.7, color: "var(--paper)", letterSpacing: "-0.01em" }}>{sanitizeText(sr.answer)}</p>
+                        <div className="flex justify-end mt-2">
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard.writeText(sr.answer).then(() => {
+                                setCopiedId(msg.id);
+                                setTimeout(() => setCopiedId(null), 2000);
+                              });
+                            }}
+                            className="flex items-center gap-1"
+                            style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", color: copiedId === msg.id ? "var(--cleared)" : "var(--ghost)", padding: "2px 6px", borderRadius: "4px", transition: "color 0.15s" }}
+                            onMouseOver={(e) => { if (copiedId !== msg.id) e.currentTarget.style.color = "var(--ash)"; }}
+                            onMouseOut={(e) => { if (copiedId !== msg.id) e.currentTarget.style.color = "var(--ghost)"; }}
+                          >
+                            {copiedId === msg.id ? <><Check size={11} />&nbsp;Copied</> : <><Copy size={11} />&nbsp;Copy</>}
+                          </button>
+                        </div>
                       </div>
 
                       {/* EVIDENCE */}

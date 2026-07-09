@@ -14,7 +14,7 @@ import {
 import { Link } from "react-router";
 import { uploadDocuments, analyzeDocuments } from "../../lib/api";
 import { toast } from "sonner";
-import { useAppDispatch } from "../../lib/store";
+import { useAppDispatch, useAppState } from "../../lib/store";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -30,6 +30,7 @@ const LOADING_STAGES = [
 export default function Landing() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const { sessionId, analysis } = useAppState();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [files, setFiles] = useState<File[]>([]);
@@ -40,6 +41,13 @@ export default function Landing() {
   const [error, setError] = useState<string | null>(null);
   const [benchmarkLabel, setBenchmarkLabel] = useState<string>("AMD MI300X");
   const [benchmarkSub, setBenchmarkSub] = useState<string>("GPU-Accelerated");
+
+  // If user navigates back and has an active session, redirect to dashboard
+  useEffect(() => {
+    if (sessionId && analysis && !isLoading) {
+      navigate("/dashboard");
+    }
+  }, []); // only on mount
 
   // Fetch live AMD benchmark on mount (non-blocking, best-effort)
   useEffect(() => {
@@ -172,15 +180,28 @@ export default function Landing() {
       stageTimers.forEach(clearTimeout);
       clearInterval(timerInterval);
       toast.dismiss(toastId);
-      const msg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
-      setError(msg);
-      if (msg.toLowerCase().includes("upload")) {
-        toast.error('Upload failed. Please check your files and try again.');
-      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
-        toast.error("Network error — is the backend running?");
+      const rawMsg = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const lower = rawMsg.toLowerCase();
+      let msg: string;
+      let toastMsg: string;
+      if (lower.includes("timed out") || lower.includes("timeout")) {
+        msg = "Analysis is taking longer than expected. Railway may be warming up — please try again in 30 seconds.";
+        toastMsg = msg;
+      } else if (lower.includes("rate") || lower.includes("429") || lower.includes("quota")) {
+        msg = "AI service is busy right now. Please wait 60 seconds and try again.";
+        toastMsg = msg;
+      } else if (lower.includes("upload") || lower.includes("413")) {
+        msg = "Upload failed — check that your files are valid PDFs or images under 10MB.";
+        toastMsg = msg;
+      } else if (lower.includes("network") || lower.includes("fetch") || lower.includes("failed to fetch")) {
+        msg = "Connection error — check your internet and try again.";
+        toastMsg = msg;
       } else {
-        toast.error('Analysis failed. Please try again.');
+        msg = "Analysis failed. Please try again. If it keeps happening, try with fewer documents.";
+        toastMsg = msg;
       }
+      setError(msg);
+      toast.error(toastMsg);
       setIsLoading(false);
     }
   };
