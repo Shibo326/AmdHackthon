@@ -62,6 +62,7 @@ export default function Chat() {
   const [sourceModal, setSourceModal] = useState<{ quote: string; source: string; docType: string } | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [inputShake, setInputShake] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -208,7 +209,16 @@ export default function Chat() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSubmit(inputValue); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!inputValue.trim()) {
+        // Shake the input for visual feedback
+        setInputShake(true);
+        setTimeout(() => setInputShake(false), 500);
+        return;
+      }
+      void handleSubmit(inputValue);
+    }
   };
 
   const handleExportChat = () => {
@@ -532,6 +542,46 @@ export default function Chat() {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5" style={{ background: "var(--ink)" }}>
+            {/* Empty state — show inline suggested questions */}
+            {messages.length === 0 && !isThinking && !isStreaming && (
+              <div className="flex flex-col items-center justify-center h-full py-8 animate-fadeIn">
+                <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "var(--volt-dim)", border: "1px solid var(--volt-border)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px" }}>
+                  <Sparkles size={22} style={{ color: "var(--volt)" }} />
+                </div>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "18px", fontWeight: 700, color: "var(--paper)", marginBottom: "6px", textAlign: "center" }}>
+                  Ask anything about your documents
+                </p>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", color: "var(--ghost)", marginBottom: "24px", textAlign: "center" }}>
+                  {documents.length} document{documents.length !== 1 ? "s" : ""} loaded · AMD MI300X ready
+                </p>
+                {/* Inline suggested questions grid */}
+                {quickQuestions.length > 0 && (
+                  <div className="w-full grid gap-2" style={{ maxWidth: "560px", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                    {quickQuestions.slice(0, 6).map((q, idx) => (
+                      <button
+                        key={idx}
+                        className="px-4 py-3 rounded-xl text-left"
+                        style={{ background: "var(--lead)", border: "1px solid var(--rule)", fontFamily: "'Inter', sans-serif", fontSize: "13px", color: "var(--ash)", cursor: "pointer", transition: "all 0.15s", lineHeight: 1.4 }}
+                        onMouseOver={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; e.currentTarget.style.color = "var(--paper)"; e.currentTarget.style.background = "var(--volt-dim)"; }}
+                        onMouseOut={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; e.currentTarget.style.color = "var(--ash)"; e.currentTarget.style.background = "var(--lead)"; }}
+                        onClick={() => void handleSubmit(q)}
+                      >
+                        <ArrowRight size={12} style={{ color: "var(--volt)", marginRight: "6px", display: "inline", flexShrink: 0 }} />
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {questionsLoading && (
+                  <div className="flex items-center gap-2 mt-4">
+                    <div className="animate-dot-1 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+                    <div className="animate-dot-2 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+                    <div className="animate-dot-3 w-1.5 h-1.5 rounded-full" style={{ background: "var(--volt)" }} />
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>Generating questions…</span>
+                  </div>
+                )}
+              </div>
+            )}
             {messages.map((msg) => {
               if (msg.role === "user") {
                 return (
@@ -725,7 +775,7 @@ export default function Chat() {
 
             <div
               className="flex items-center gap-3 px-4 rounded-2xl"
-              style={{ background: "var(--graphite)", border: "1px solid var(--rule)", minHeight: "52px", transition: "border-color 0.2s" }}
+              style={{ background: "var(--graphite)", border: `1px solid ${inputShake ? "var(--amd-signal)" : "var(--rule)"}`, minHeight: "52px", transition: "border-color 0.2s", animation: inputShake ? "shake 0.4s ease" : "none" }}
               onFocus={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; }}
             >
