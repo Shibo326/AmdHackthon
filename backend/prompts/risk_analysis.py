@@ -1,8 +1,9 @@
+import re
 from models.document import Chunk
 
 
 def build_risk_prompt(chunks: list[Chunk]) -> str:
-    context = _format_chunks(chunks)
+    context = _format_chunks_for_risk(chunks)
 
     return f"""You are Clausify AI — a senior risk analyst with the mindset of a Big Four audit partner. You don't just find risks — you understand their cascade effects, quantify their impact, and prioritize them the way a CFO or General Counsel would.
 
@@ -76,14 +77,65 @@ SEVERITY CALIBRATION:
 Identify ALL material risks — no artificial cap. Quality over quantity — each risk should represent a genuine business concern, not a stylistic observation."""
 
 
-def _format_chunks(chunks: list[Chunk]) -> str:
+# Regex patterns that signal risk-relevant content
+_RISK_SIGNALS = re.compile(
+    r'\$[\d,]+|%|\bshall\b|\bmust\b|\brequired\b|\bliability\b|\bindemnif|\bterminat|\bpenalt'
+    r'|\bexpir|\brenew|\bwarrant|\bIP\b|\bintellectual property\b|\bconfidential\b'
+    r'|\bcovenant\b|\bnon.compet|\bassign|\bpayment\b|\bdue\b|\bdeadline\b'
+    r'|\bvoid\b|\bbreach\b|\bdispute\b|\bgovernin\b|\bjurisdiction\b',
+    re.IGNORECASE,
+)
+
+
+def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 5) -> str:
+    """
+    Format chunks for risk analysis. Uses up to 5 chunks per doc, prioritizing
+    chunks that contain financial figures, legal obligations, and risk-relevant keywords.
+    """
+    if not chunks:
+        return "(no document content available)"
+
+    # Group chunks by document, preserving order
+    from collections import defaultdict
+    doc_chunks: dict[str, list[Chunk]] = defaultdict(list)
+    for chunk in chunks:
+        doc_chunks[chunk.source_document].append(chunk)
+
+    sections = []
+    for doc_name, doc_chunk_list in doc_chunks.items():
+        # Score each chunk by risk-signal density
+        scored = sorted(
+            doc_chunk_list,
+            key=lambda c: len(_RISK_SIGNALS.findall(c.text)),
+            reverse=True,
+        )
+        # Take top N by risk signal score, but limit per doc
+        selected = scored[:max_chunks_per_doc]
+        # Re-sort by original position for readability (preserve document flow)
+        selected.sort(key=lambda c: doc_chunk_list.index(c))
+
+        sections.append(f"\n=== {doc_name} ===")
+        for chunk in selected:
+            sections.append(chunk.text[:900])
+
+    return "\n".join(sections)
+
+
+def _format_chunks(chunks: list[Chunk], max_chunks_per_doc: int = 3) -> str:
+    """Format chunks for LLM prompts. Limits to max_chunks_per_doc per document to cap input tokens."""
     if not chunks:
         return "(no document content available)"
     sections = []
     current_doc = None
+    doc_chunk_count: dict[str, int] = {}
     for chunk in chunks:
-        if chunk.source_document != current_doc:
-            current_doc = chunk.source_document
+        doc = chunk.source_document
+        count = doc_chunk_count.get(doc, 0)
+        if count >= max_chunks_per_doc:
+            continue
+        doc_chunk_count[doc] = count + 1
+        if doc != current_doc:
+            current_doc = doc
             sections.append(f"\n=== {current_doc} ===")
-        sections.append(chunk.text[:1200])
+        sections.append(chunk.text[:900])
     return "\n".join(sections)

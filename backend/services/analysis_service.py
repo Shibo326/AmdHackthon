@@ -241,7 +241,8 @@ Return ONLY valid JSON:
     ) -> list[Risk]:
         """Generate risk analysis list."""
         user_prompt = build_risk_prompt(chunks)
-        raw = await self.llm_service.complete(system_prompt, user_prompt)
+        # Risks need a larger output budget — may return many items across 8 docs
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=4096)
         raw = _strip_json_fences(raw)
 
         # Robust extraction — try multiple parse strategies

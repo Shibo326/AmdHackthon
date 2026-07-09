@@ -2,6 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Zap, Menu, X } from "lucide-react";
 
+function scrollToHowItWorks() {
+  const el = document.getElementById("how-it-works");
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    // If we're not on the landing page yet, navigate there with the hash
+    window.location.href = "/#how-it-works";
+  }
+}
+
 interface NavigationBarProps {
   showDemo?: boolean;
 }
@@ -68,13 +78,17 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
 
           {/* Nav links (desktop only) */}
           <div className="hidden sm:flex items-center">
-            <Link
-              to="/#how-it-works"
+            <button
+              onClick={scrollToHowItWorks}
               style={{
                 fontFamily: "'Inter', sans-serif",
                 fontSize: "14px",
                 fontWeight: 500,
                 color: "var(--ash)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
               }}
               onMouseOver={(e) => {
                 e.currentTarget.style.color = "var(--paper)";
@@ -84,7 +98,7 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
               }}
             >
               How it works
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -181,6 +195,22 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
             gap: "10px",
           }}
         >
+          <button
+            onClick={() => { scrollToHowItWorks(); setMenuOpen(false); }}
+            className="w-full px-4 py-3 rounded-lg border text-left"
+            style={{
+              background: "transparent",
+              borderColor: "var(--rule)",
+              color: "var(--ash)",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: "15px",
+              fontWeight: 500,
+              cursor: "pointer",
+              borderRadius: "var(--radius-btn)",
+            }}
+          >
+            How it works
+          </button>
           <Link to="/demo" onClick={() => setMenuOpen(false)}>
             <button
               className="w-full px-4 py-3 rounded-lg border"

@@ -60,14 +60,21 @@ CONFIDENCE CALIBRATION:
 - Below 0.60: Evidence is insufficient for a strong recommendation — say so in the summary and suggest what additional information is needed"""
 
 
-def _format_chunks(chunks: list[Chunk]) -> str:
+def _format_chunks(chunks: list[Chunk], max_chunks_per_doc: int = 3) -> str:
+    """Format chunks for LLM prompts. Limits to max_chunks_per_doc per document to cap input tokens."""
     if not chunks:
         return "(no document content available)"
     sections = []
     current_doc = None
+    doc_chunk_count: dict[str, int] = {}
     for chunk in chunks:
-        if chunk.source_document != current_doc:
-            current_doc = chunk.source_document
+        doc = chunk.source_document
+        count = doc_chunk_count.get(doc, 0)
+        if count >= max_chunks_per_doc:
+            continue
+        doc_chunk_count[doc] = count + 1
+        if doc != current_doc:
+            current_doc = doc
             sections.append(f"\n=== {current_doc} ===")
-        sections.append(chunk.text[:1200])
+        sections.append(chunk.text[:900])
     return "\n".join(sections)

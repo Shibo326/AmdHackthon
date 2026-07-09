@@ -56,7 +56,7 @@ class ConflictEngine:
 
         try:
             raw = await self.llm_service.complete(
-                system_prompt, prompt, max_tokens=4096
+                system_prompt, prompt, max_tokens=2048
             )
             raw = _strip_json_fences(raw)
             conflicts = self._parse_conflicts(raw)
@@ -79,8 +79,8 @@ class ConflictEngine:
             chunks = doc_chunks.get(doc_name, [])
             if not chunks:
                 continue
-            # Take first 8 chunks, truncated to 900 chars each for deeper context
-            content = "\n".join(c.text[:900] for c in chunks[:8])
+            # Take first 3 chunks, truncated to 800 chars each — caps input tokens across many docs
+            content = "\n".join(c.text[:800] for c in chunks[:3])
             sections.append(f"=== DOCUMENT {i}: {doc_name} ===\n{content}")
 
         all_docs_content = "\n\n".join(sections)

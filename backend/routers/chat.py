@@ -240,9 +240,66 @@ async def chat_stream(request: ChatRequest):
             # Get full LLM response
             raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
             raw = _strip_json_fences(raw)
-            data = json.loads(raw)
 
-            answer = data.get("answer", "")
+            # Sanitize control characters that break JSON parsing
+            import re
+            raw = raw.replace('\r\n', '\\n').replace('\r', '\\n')
+            raw = raw.replace('\t', '\\t')
+            raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+
+            # Robust JSON extraction — same logic as /chat endpoint
+            data = None
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                brace_start = raw.find("{")
+                brace_end = raw.rfind("}")
+                if brace_start != -1 and brace_end > brace_start:
+                    try:
+                        data = json.loads(raw[brace_start:brace_end + 1])
+                    except json.JSONDecodeError:
+                        cleaned = re.sub(r',\s*([}\]])', r'\1', raw[brace_start:brace_end + 1])
+                        try:
+                            data = json.loads(cleaned)
+                        except json.JSONDecodeError:
+                            pass
+
+            # If JSON parsing totally failed, treat the raw text as the answer
+            if data is None:
+                answer = raw.strip()
+                evidence_list = []
+                risks_str = ""
+                rec_str = ""
+            else:
+                answer = data.get("answer", "")
+
+                # Build evidence list
+                evidence_list = []
+                for ev in data.get("evidence", []):
+                    quote = ev.get("quote", "")[:200]
+                    evidence_list.append({
+                        "quote": quote,
+                        "sourceDocument": ev.get("sourceDocument", ""),
+                        "documentType": ev.get("documentType", "pdf"),
+                    })
+
+                # Coerce risks
+                raw_risks = data.get("risks", "")
+                if isinstance(raw_risks, list):
+                    risks_str = " ".join(item if isinstance(item, str) else item.get("description", str(item)) for item in raw_risks)
+                elif isinstance(raw_risks, dict):
+                    risks_str = raw_risks.get("description", str(raw_risks))
+                else:
+                    risks_str = str(raw_risks) if raw_risks else ""
+
+                # Coerce recommendation
+                raw_rec = data.get("recommendation", "")
+                if isinstance(raw_rec, dict):
+                    rec_str = raw_rec.get("summary", raw_rec.get("title", str(raw_rec)))
+                elif isinstance(raw_rec, list):
+                    rec_str = " ".join(str(r) for r in raw_rec)
+                else:
+                    rec_str = str(raw_rec) if raw_rec else ""
 
             # Stream answer word by word
             words = answer.split(" ")
@@ -250,34 +307,6 @@ async def chat_stream(request: ChatRequest):
                 chunk_text = word + (" " if i < len(words) - 1 else "")
                 yield f"data: {json.dumps({'type': 'token', 'text': chunk_text})}\n\n"
                 await asyncio.sleep(0.018)  # ~55 words/sec — feels natural
-
-            # Build evidence list
-            evidence_list = []
-            for ev in data.get("evidence", []):
-                quote = ev.get("quote", "")[:200]
-                evidence_list.append({
-                    "quote": quote,
-                    "sourceDocument": ev.get("sourceDocument", ""),
-                    "documentType": ev.get("documentType", "pdf"),
-                })
-
-            # Coerce risks
-            raw_risks = data.get("risks", "")
-            if isinstance(raw_risks, list):
-                risks_str = " ".join(item if isinstance(item, str) else item.get("description", str(item)) for item in raw_risks)
-            elif isinstance(raw_risks, dict):
-                risks_str = raw_risks.get("description", str(raw_risks))
-            else:
-                risks_str = str(raw_risks) if raw_risks else ""
-
-            # Coerce recommendation
-            raw_rec = data.get("recommendation", "")
-            if isinstance(raw_rec, dict):
-                rec_str = raw_rec.get("summary", raw_rec.get("title", str(raw_rec)))
-            elif isinstance(raw_rec, list):
-                rec_str = " ".join(str(r) for r in raw_rec)
-            else:
-                rec_str = str(raw_rec) if raw_rec else ""
 
             elapsed_ms = int((time.time() - start_time) * 1000)
             message_id = str(uuid.uuid4())

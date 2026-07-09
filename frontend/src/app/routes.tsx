@@ -1,5 +1,5 @@
-import { createBrowserRouter } from "react-router";
-import { lazy, Suspense } from "react";
+import { createBrowserRouter, useRouteError, isRouteErrorResponse } from "react-router";
+import { lazy, Suspense, useEffect } from "react";
 import { motion } from "framer-motion";
 
 // Lazy-loaded page components for code-splitting
@@ -64,6 +64,123 @@ function PageLoader() {
   );
 }
 
+// Route-level error boundary — handles chunk load failures and 404s cleanly
+function RouteErrorBoundary() {
+  const error = useRouteError();
+
+  // Auto-reload once on chunk load failure (stale cache after deploy)
+  useEffect(() => {
+    const message = error instanceof Error ? error.message : String(error);
+    const isChunkError =
+      message.includes("Failed to fetch dynamically imported module") ||
+      message.includes("Loading chunk") ||
+      message.includes("Loading CSS chunk") ||
+      message.includes("error loading dynamically imported module");
+
+    if (isChunkError) {
+      const reloadKey = "clausify_chunk_reload";
+      const alreadyReloaded = sessionStorage.getItem(reloadKey);
+      if (!alreadyReloaded) {
+        sessionStorage.setItem(reloadKey, "1");
+        window.location.reload();
+      } else {
+        // Already tried reloading — clear the flag so next navigation works
+        sessionStorage.removeItem(reloadKey);
+      }
+    }
+  }, [error]);
+
+  const is404 = isRouteErrorResponse(error) && error.status === 404;
+  const message = is404
+    ? "Page not found."
+    : error instanceof Error
+    ? error.message
+    : "An unexpected error occurred.";
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--ink)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--lead)",
+          border: "1px solid rgba(239,68,68,0.3)",
+          borderRadius: "12px",
+          padding: "32px",
+          maxWidth: "480px",
+          width: "100%",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: "32px", marginBottom: "16px" }}>⚠️</div>
+        <h2
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: "20px",
+            fontWeight: 700,
+            color: "var(--paper)",
+            marginBottom: "8px",
+          }}
+        >
+          {is404 ? "Page not found" : "Something went wrong"}
+        </h2>
+        <p
+          style={{
+            fontFamily: "'Inter', sans-serif",
+            fontSize: "14px",
+            color: "var(--ash)",
+            marginBottom: "20px",
+            lineHeight: 1.6,
+          }}
+        >
+          {message}
+        </p>
+        <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: "var(--volt)",
+              color: "var(--ink)",
+              border: "none",
+              borderRadius: "var(--radius-btn)",
+              padding: "10px 24px",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            Reload Page
+          </button>
+          <button
+            onClick={() => (window.location.href = "/")}
+            style={{
+              background: "transparent",
+              color: "var(--ash)",
+              border: "1px solid var(--rule)",
+              borderRadius: "var(--radius-btn)",
+              padding: "10px 24px",
+              fontFamily: "'Inter', sans-serif",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Wrap lazy components with Suspense
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
@@ -77,6 +194,7 @@ export const router = createBrowserRouter([
         <Landing />
       </SuspenseWrapper>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/dashboard",
@@ -85,6 +203,7 @@ export const router = createBrowserRouter([
         <Dashboard />
       </SuspenseWrapper>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/chat",
@@ -93,6 +212,7 @@ export const router = createBrowserRouter([
         <Chat />
       </SuspenseWrapper>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: "/demo",
@@ -101,6 +221,7 @@ export const router = createBrowserRouter([
         <Demo />
       </SuspenseWrapper>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: "*",
@@ -109,5 +230,6 @@ export const router = createBrowserRouter([
         <Landing />
       </SuspenseWrapper>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
 ]);

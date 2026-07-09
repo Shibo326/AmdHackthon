@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-MAX_TOKENS_DEFAULT = 6144
+MAX_TOKENS_DEFAULT = 3000
 
 
 class LLMRateLimitError(Exception):

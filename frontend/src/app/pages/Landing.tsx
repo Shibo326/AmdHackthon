@@ -437,63 +437,56 @@ export default function Landing() {
               </div>
 
               {/* Stage steps with AnimatePresence */}
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-center">
+              <div className="flex flex-wrap gap-x-4 gap-y-2.5 items-center">
                 {LOADING_STAGES.map((stage, i) => (
-                  <div key={i} className="flex items-center gap-2 flex-1">
-                    {i > 0 && (
+                  <motion.div
+                    key={i}
+                    className="flex items-center gap-1.5"
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{
+                      opacity: 1,
+                      x: 0,
+                      scale: i === loadingStage ? [1, 1.04, 1] : 1,
+                    }}
+                    transition={{
+                      opacity: { duration: 0.3, delay: i * 0.1 },
+                      x: { type: "spring", stiffness: 300, damping: 20, delay: i * 0.1 },
+                      scale: { duration: 0.6, repeat: i === loadingStage ? Infinity : 0, ease: "easeInOut" },
+                    }}
+                  >
+                    {i < loadingStage ? (
+                      <motion.div
+                        initial={{ scale: 0.5 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                      >
+                        <CheckCircle size={14} style={{ color: "var(--cleared)", flexShrink: 0 }} />
+                      </motion.div>
+                    ) : i === loadingStage ? (
                       <div
-                        className="hidden sm:block"
-                        style={{ flex: 1, height: "1px", background: i <= loadingStage ? "var(--volt)" : "var(--rule)", transition: "background 0.4s", margin: "0 8px" }}
+                        style={{
+                          width: "14px", height: "14px", borderRadius: "50%",
+                          border: "2px solid var(--volt)",
+                          borderTopColor: "transparent",
+                          flexShrink: 0,
+                        }}
+                        className="animate-spin-slow"
                       />
+                    ) : (
+                      <div style={{ width: "14px", height: "14px", borderRadius: "50%", border: "2px solid var(--rule)", flexShrink: 0 }} />
                     )}
-                    <motion.div
-                      className="flex items-center gap-2"
-                      initial={{ opacity: 0, x: -12 }}
-                      animate={{
-                        opacity: 1,
-                        x: 0,
-                        scale: i === loadingStage ? [1, 1.04, 1] : 1,
-                      }}
-                      transition={{
-                        opacity: { duration: 0.3, delay: i * 0.1 },
-                        x: { type: "spring", stiffness: 300, damping: 20, delay: i * 0.1 },
-                        scale: { duration: 0.6, repeat: i === loadingStage ? Infinity : 0, ease: "easeInOut" },
+                    <span
+                      style={{
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "12px",
+                        fontWeight: i === loadingStage ? 600 : 400,
+                        color: i < loadingStage ? "var(--cleared)" : i === loadingStage ? "var(--paper)" : "var(--ghost)",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {i < loadingStage ? (
-                        <motion.div
-                          initial={{ scale: 0.5 }}
-                          animate={{ scale: 1 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                        >
-                          <CheckCircle size={16} style={{ color: "var(--cleared)", flexShrink: 0 }} />
-                        </motion.div>
-                      ) : i === loadingStage ? (
-                        <div
-                          style={{
-                            width: "16px", height: "16px", borderRadius: "50%",
-                            border: "2px solid var(--volt)",
-                            borderTopColor: "transparent",
-                            flexShrink: 0,
-                          }}
-                          className="animate-spin-slow"
-                        />
-                      ) : (
-                        <div style={{ width: "16px", height: "16px", borderRadius: "50%", border: "2px solid var(--rule)", flexShrink: 0 }} />
-                      )}
-                      <span
-                        style={{
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: "13px",
-                          fontWeight: i === loadingStage ? 600 : 400,
-                          color: i < loadingStage ? "var(--cleared)" : i === loadingStage ? "var(--paper)" : "var(--ghost)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {stage.label}
-                      </span>
-                    </motion.div>
-                  </div>
+                      {stage.label}
+                    </span>
+                  </motion.div>
                 ))}
               </div>
             </div>
