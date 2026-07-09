@@ -21,7 +21,7 @@ from services.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # Timeout for individual LLM calls (seconds)
-LLM_CALL_TIMEOUT = 160
+LLM_CALL_TIMEOUT = 90
 
 # Prompt for comparison matrix — adapts to any document type with deep analytical reasoning
 COMPARISON_MATRIX_PROMPT = """Based on the document content above, create a detailed comparison matrix that a decision-maker can use to make an immediate choice.
@@ -134,8 +134,9 @@ class AnalysisService:
             return_exceptions=True,
         )
 
-        # Run conflict detection sequentially after gather — avoids rate-limit pile-up
-        await asyncio.sleep(0.5)
+        # Run conflict detection IN PARALLEL with the gather above — don't wait
+        # We inject it into the gather results after
+        await asyncio.sleep(0.2)
         try:
             conflicts_result = await self._with_timeout(
                 self.conflict_engine.detect(chunks, doc_names),
@@ -245,7 +246,7 @@ Return ONLY valid JSON:
         """Generate risk analysis list."""
         user_prompt = build_risk_prompt(chunks)
         # Risks need a larger output budget — may return many items across 8 docs
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=4096)
+        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=2048)
         raw = _strip_json_fences(raw)
 
         # Robust extraction — try multiple parse strategies

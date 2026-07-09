@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
-MAX_TOKENS_DEFAULT = 3000
+MAX_TOKENS_DEFAULT = 2000
 
 
 class LLMRateLimitError(Exception):
@@ -62,7 +62,7 @@ class LLMService:
                 return await self._call_fireworks(system_prompt, user_prompt, max_tokens, temperature)
             except LLMRateLimitError:
                 if attempt < 2:
-                    wait = (attempt + 1) * 3  # 3s then 6s
+                    wait = (attempt + 1) * 2  # 2s then 4s
                     logger.warning(
                         f"[Fireworks] Rate limited, retry {attempt + 1}/3 in {wait}s..."
                     )
@@ -97,7 +97,7 @@ class LLMService:
             "frequency_penalty": 0.3,
         }
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=100.0) as client:
             try:
                 response = await client.post(
                     f"{self._endpoint}/chat/completions",
