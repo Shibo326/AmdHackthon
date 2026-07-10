@@ -123,6 +123,7 @@ async def chat(request: ChatRequest):
 
         # If JSON parsing totally failed, return the raw text as the answer
         if data is None:
+            logger.warning(f"[chat] JSON parse failed. Raw first 300: {raw[:300]!r}")
             structured_response = StructuredAIResponse(
                 answer=raw.strip(),
                 evidence=[],
@@ -130,6 +131,12 @@ async def chat(request: ChatRequest):
                 recommendation="",
             )
         else:
+            answer = data.get("answer", "")
+            logger.info(f"[chat] Parsed OK. answer={len(answer)} chars, evidence={len(data.get('evidence', []))}")
+            # Safety: if answer accidentally contains a JSON array at the end, strip it
+            import re as _re
+            answer = _re.sub(r'\s*\[[\s\S]*?\]\s*$', '', answer).strip()
+            answer = _re.sub(r'\s*\{[\s\S]*?\}\s*$', '', answer).strip()
             # Parse structured response from JSON
             evidence_list = []
             for ev in data.get("evidence", []):
@@ -165,7 +172,7 @@ async def chat(request: ChatRequest):
                 rec_str = str(raw_rec) if raw_rec else ""
 
             structured_response = StructuredAIResponse(
-                answer=data.get("answer", ""),
+                answer=answer,
                 evidence=evidence_list,
                 risks=risks_str,
                 recommendation=rec_str,
@@ -272,6 +279,10 @@ async def chat_stream(request: ChatRequest):
                 rec_str = ""
             else:
                 answer = data.get("answer", "")
+                # Safety: strip trailing JSON arrays/objects that got appended to answer
+                import re as _re
+                answer = _re.sub(r'\s*\[[\s\S]*?\]\s*$', '', answer).strip()
+                answer = _re.sub(r'\s*\{[\s\S]*?\}\s*$', '', answer).strip()
 
                 # Build evidence list
                 evidence_list = []
