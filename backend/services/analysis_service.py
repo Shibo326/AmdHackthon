@@ -21,7 +21,7 @@ from services.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # Timeout for individual LLM calls (seconds)
-# deepseek-v4-pro reasoning model may need a bit more time than gpt-oss-120b
+# deepseek-v4-flash reasoning model may need a bit more time than gpt-oss-120b
 LLM_CALL_TIMEOUT = 80
 
 # Prompt for comparison matrix — adapts to any document type with deep analytical reasoning
@@ -69,7 +69,7 @@ class AnalysisService:
     Orchestrates the full multi-document AI analysis pipeline.
 
     Performance-optimized architecture:
-    - Tiered model routing: deepseek-v4-pro for reasoning, gpt-oss-120b for structured tasks
+    - Tiered model routing: deepseek-v4-flash for reasoning, gpt-oss-120b for structured tasks
     - SINGLE_CALL_MODE: combine all analysis into 1 call (set SINGLE_CALL_MODE=true in env)
     - All 5 LLM calls run in parallel (no batching)
     - Suggested questions merged into executive summary call (saves 1 call)
@@ -118,7 +118,7 @@ class AnalysisService:
         logger.info(
             f"Starting full analysis for session {session_id} "
             f"({len(chunks)} chunks, {len(doc_names)} documents) — 5 parallel LLM calls "
-            f"[quality: deepseek-v4-pro, fast: gpt-oss-120b, timeout: {LLM_CALL_TIMEOUT}s]"
+            f"[quality: deepseek-v4-flash, fast: gpt-oss-120b, timeout: {LLM_CALL_TIMEOUT}s]"
         )
 
         if chunks:
@@ -306,7 +306,7 @@ class AnalysisService:
     ) -> tuple[str, list[str]]:
         """
         Generate executive summary AND suggested questions in a single LLM call.
-        Uses the QUALITY model (deepseek-v4-pro) for deep reasoning.
+        Uses the QUALITY model (deepseek-v4-flash) for deep reasoning.
         Merging these saves one full LLM round-trip (10-60s).
         """
         from prompts.executive_summary import _format_chunks
@@ -330,7 +330,7 @@ Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
   "suggestedQuestions": ["question1", "question2", "question3", "question4", "question5"]
 }}"""
 
-        # Quality model (deepseek-v4-pro) for nuanced summary; 1200 tokens is enough
+        # Quality model (deepseek-v4-flash) for nuanced summary; 1200 tokens is enough
         raw = await self.llm_service.complete(
             system_prompt, merged_prompt, max_tokens=1200, fast=False
         )
@@ -359,9 +359,9 @@ Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
         system_prompt: str,
         chunks: list[Chunk],
     ) -> list[Risk]:
-        """Generate risk analysis list using the QUALITY model (deepseek-v4-pro)."""
+        """Generate risk analysis list using the QUALITY model (deepseek-v4-flash)."""
         user_prompt = build_risk_prompt(chunks)
-        # Increased to 3000 tokens — deepseek-v4-pro is more verbose than gpt-oss-120b
+        # Increased to 3000 tokens — deepseek-v4-flash is more verbose than gpt-oss-120b
         # and needs extra headroom to output 5-8 detailed risk items without truncation.
         raw = await self.llm_service.complete(
             system_prompt, user_prompt, max_tokens=3000, fast=False
@@ -483,7 +483,7 @@ DOCUMENT CONTEXT:
 
 {COMPARISON_MATRIX_PROMPT}"""
 
-        # FAST model — structured output task; increased to 1500 tokens for deepseek-v4-pro
+        # FAST model — structured output task; increased to 1500 tokens for deepseek-v4-flash
         # verbosity. 500 was too low and caused truncated/empty matrix responses.
         raw = await self.llm_service.complete(
             system_prompt, user_prompt, max_tokens=1500, fast=True
@@ -539,7 +539,7 @@ DOCUMENT CONTEXT:
     ) -> Recommendation:
         """
         Generate procurement recommendation.
-        Uses QUALITY model (deepseek-v4-pro) — requires strategic reasoning.
+        Uses QUALITY model (deepseek-v4-flash) — requires strategic reasoning.
         max_tokens=800 is sufficient for a recommendation with 3-5 next steps.
         """
         user_prompt = build_recommendation_prompt(chunks)
