@@ -361,11 +361,12 @@ Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
     ) -> list[Risk]:
         """Generate risk analysis list using the QUALITY model (deepseek-v4-pro)."""
         user_prompt = build_risk_prompt(chunks)
-        # Quality model needs 2000 tokens to output 5-8 risk items without truncation.
+        # Increased to 3000 tokens — deepseek-v4-pro is more verbose than gpt-oss-120b
+        # and needs extra headroom to output 5-8 detailed risk items without truncation.
         raw = await self.llm_service.complete(
-            system_prompt, user_prompt, max_tokens=2000, fast=False
+            system_prompt, user_prompt, max_tokens=3000, fast=False
         )
-        logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
+        logger.info(f"[risks] raw LLM response: {len(raw)} chars, first 500: {raw[:500]!r}")
         raw = _strip_json_fences(raw)
         logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")
 
@@ -482,10 +483,12 @@ DOCUMENT CONTEXT:
 
 {COMPARISON_MATRIX_PROMPT}"""
 
-        # FAST model — structured output task; 500 tokens for 5-8 rows
+        # FAST model — structured output task; increased to 1500 tokens for deepseek-v4-pro
+        # verbosity. 500 was too low and caused truncated/empty matrix responses.
         raw = await self.llm_service.complete(
-            system_prompt, user_prompt, max_tokens=500, fast=True
+            system_prompt, user_prompt, max_tokens=1500, fast=True
         )
+        logger.info(f"[matrix] raw LLM response: {len(raw)} chars, first 300: {raw[:300]!r}")
         raw = _strip_json_fences(raw)
 
         # Robust JSON extraction — handle common LLM formatting issues

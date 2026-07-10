@@ -64,7 +64,9 @@ class ConflictEngine:
             raw = await self.llm_service.complete(
                 system_prompt, prompt, max_tokens=1500, fast=True
             )
+            logger.info(f"[conflicts] raw LLM response: {len(raw)} chars, first 300: {raw[:300]!r}")
             raw = _strip_json_fences(raw)
+            logger.info(f"[conflicts] after strip, first 200: {raw[:200]!r}")
             conflicts = self._parse_conflicts(raw)
             logger.info(
                 f"Found {len(conflicts)} conflict(s) across {len(document_names)} documents"
@@ -158,12 +160,27 @@ Return ONLY valid JSON:
 }}"""
 
     def _parse_conflicts(self, raw: str) -> list[Conflict]:
-        """Parse the LLM response into Conflict objects."""
+        """Parse the LLM response into Conflict objects with aggressive JSON extraction."""
+        import re
+
+        # Aggressive brace extraction — same pattern as chat.py
+        brace_start = raw.find("{")
+        brace_end = raw.rfind("}")
+        if brace_start != -1 and brace_end > brace_start:
+            raw = raw[brace_start:brace_end + 1]
+        raw = raw.strip()
+
+        data = None
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse conflict JSON: {e}. Raw: {raw[:200]}")
-            return []
+            # Try cleaning trailing commas
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw)
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse conflict JSON: {e}. Raw first 500: {raw[:500]!r}")
+                return []
 
         # Handle both formats: {"conflicts": [...]} or bare array [...]
         if isinstance(data, dict):

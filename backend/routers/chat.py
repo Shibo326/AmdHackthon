@@ -93,7 +93,9 @@ async def chat(request: ChatRequest):
 
     try:
         raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
+        logger.info(f"[chat] raw LLM response: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
+        logger.info(f"[chat] after strip_json_fences, first 200: {raw[:200]!r}")
 
         import re
         # Only remove true control characters — do NOT escape \n or \t as that breaks JSON strings
@@ -102,28 +104,30 @@ async def chat(request: ChatRequest):
         # Fix escaped single quotes used as JSON keys (\'key\' -> "key")
         raw = re.sub(r"\\'([^']+)\\'", r'"\1"', raw)
 
+        # Aggressive pre-parsing: find FIRST { and LAST } before attempting json.loads
+        # This handles deepseek-v4-pro outputting prose before/after the JSON block
+        brace_start = raw.find("{")
+        brace_end = raw.rfind("}")
+        if brace_start != -1 and brace_end > brace_start:
+            raw = raw[brace_start:brace_end + 1]
+        raw = raw.strip()
+        logger.info(f"[chat] after brace extraction, first 200: {raw[:200]!r}")
+
         # Try to parse JSON, with fallback extraction
         data = None
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            # Try extracting JSON from surrounding text
-            brace_start = raw.find("{")
-            brace_end = raw.rfind("}")
-            if brace_start != -1 and brace_end > brace_start:
-                try:
-                    data = json.loads(raw[brace_start:brace_end + 1])
-                except json.JSONDecodeError:
-                    # Last resort: clean up and try again
-                    cleaned = re.sub(r',\s*([}\]])', r'\1', raw[brace_start:brace_end + 1])
-                    try:
-                        data = json.loads(cleaned)
-                    except json.JSONDecodeError:
-                        pass
+            # Try cleaning trailing commas and retry
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw)
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
 
         # If JSON parsing totally failed, return the raw text as the answer
         if data is None:
-            logger.warning(f"[chat] JSON parse failed. Raw first 300: {raw[:300]!r}")
+            logger.warning(f"[chat] JSON parse failed after all attempts. Raw first 500: {raw[:500]!r}")
             structured_response = StructuredAIResponse(
                 answer=raw.strip(),
                 evidence=[],
@@ -275,6 +279,7 @@ async def chat_stream(request: ChatRequest):
         try:
             # Get full LLM response
             raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
+            logger.info(f"[chat/stream] raw LLM response: {len(raw)} chars, first 200: {raw[:200]!r}")
             raw = _strip_json_fences(raw)
 
             import re
@@ -284,22 +289,26 @@ async def chat_stream(request: ChatRequest):
             # Fix escaped single quotes used as JSON keys (\'key\' -> "key")
             raw = re.sub(r"\\'([^']+)\\'", r'"\1"', raw)
 
+            # Aggressive pre-parsing: find FIRST { and LAST } before attempting json.loads
+            # This handles deepseek-v4-pro outputting prose before/after the JSON block
+            brace_start = raw.find("{")
+            brace_end = raw.rfind("}")
+            if brace_start != -1 and brace_end > brace_start:
+                raw = raw[brace_start:brace_end + 1]
+            raw = raw.strip()
+            logger.info(f"[chat/stream] after brace extraction, first 200: {raw[:200]!r}")
+
             # Robust JSON extraction — same logic as /chat endpoint
             data = None
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                brace_start = raw.find("{")
-                brace_end = raw.rfind("}")
-                if brace_start != -1 and brace_end > brace_start:
-                    try:
-                        data = json.loads(raw[brace_start:brace_end + 1])
-                    except json.JSONDecodeError:
-                        cleaned = re.sub(r',\s*([}\]])', r'\1', raw[brace_start:brace_end + 1])
-                        try:
-                            data = json.loads(cleaned)
-                        except json.JSONDecodeError:
-                            pass
+                # Try cleaning trailing commas and retry
+                cleaned = re.sub(r',\s*([}\]])', r'\1', raw)
+                try:
+                    data = json.loads(cleaned)
+                except json.JSONDecodeError:
+                    logger.warning(f"[chat/stream] JSON parse failed after all attempts. Raw first 500: {raw[:500]!r}")
 
             # If JSON parsing totally failed, treat the raw text as the answer
             if data is None:
