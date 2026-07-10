@@ -17,7 +17,7 @@ MAX_TOKENS_DEFAULT = 2000
 # ── Tiered model config ──────────────────────────────────────────────────────
 # MODEL_QUALITY: deepseek-v4-0324 — deep reasoning for summaries, risks, recommendations
 # MODEL_FAST: gpt-oss-120b — AMD MI300X optimised, fast structured output for matrix/questions/conflicts
-_MODEL_QUALITY_DEFAULT = "accounts/fireworks/models/deepseek-v4-0324"
+_MODEL_QUALITY_DEFAULT = "accounts/fireworks/models/deepseek-v4-pro"
 _MODEL_FAST_DEFAULT = "accounts/fireworks/models/gpt-oss-120b"
 
 
