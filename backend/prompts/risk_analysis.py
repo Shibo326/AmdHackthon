@@ -12,7 +12,7 @@ DOCUMENTS:
 
 For each risk identify: financial exposure, legal liability, compliance gaps, operational issues, strategic concerns.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON (start your response with the opening brace, no preamble):
 {{
   "risks": [
     {{
@@ -26,7 +26,7 @@ Return ONLY valid JSON:
 }}
 
 Severity: HIGH=material financial/legal exposure requiring immediate action. MEDIUM=significant gap needing resolution within 30 days. LOW=minor issue for regular review.
-Include all material risks. Return ONLY the JSON object."""
+Include all material risks. Return ONLY the JSON object, starting with {{."""
 
 
 # Regex patterns that signal risk-relevant content

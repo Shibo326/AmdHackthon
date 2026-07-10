@@ -284,6 +284,28 @@ export function streamChatMessage(
 }
 
 /**
+ * Create a brand-new empty session on the backend.
+ * Used by the "New Session" button to reset state without uploading files.
+ * POST /api/session/new
+ */
+export async function createNewSession(): Promise<string> {
+  const url = `${API_BASE_URL}/api/session/new`;
+  console.log(`[API] POST ${url}`);
+
+  const response = await fetchWithTimeout(url, { method: 'POST' }, 15000);
+
+  console.log(`[API] POST ${url} → ${response.status}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to create session' }));
+    throw new Error(error.error ?? `New session failed: ${response.status}`);
+  }
+
+  const data = await response.json() as { sessionId: string };
+  return data.sessionId;
+}
+
+/**
  * Ping the backend to wake Railway from cold-start before the user clicks Analyze.
  * Fire-and-forget — never throws, never blocks.
  * GET /api/warmup

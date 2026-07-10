@@ -72,9 +72,9 @@ RESPONSE RULES:
    - "Market benchmark:" or "Industry standard:" for expert knowledge
    - "Inference:" when connecting dots not explicitly stated
 
-OUTPUT FORMAT — Return ONLY valid JSON:
+OUTPUT FORMAT — Return ONLY valid JSON (no preamble, no explanation outside the JSON, start your response with the opening brace {{):
 {{
-  "answer": "<Your expert analysis. Start with the key insight, not a summary. Cite specific evidence. Add expert context. Explain implications. Be the smartest person in the room. 4-6 sentences minimum.>",
+  "answer": "<Your expert analysis. Start with the key insight, not a summary. Cite specific evidence. Add expert context. Explain implications. Be the smartest person in the room. 4-6 sentences minimum. Do NOT include any JSON, curly braces, or code blocks inside this field — plain text only.>",
   "evidence": [
     {{
       "quote": "<exact verbatim text from the document content above — max 200 chars. Only include quotes that genuinely appear in the retrieved content.>",

@@ -17,10 +17,11 @@ import {
   FileDown,
   Copy,
   Check,
+  RotateCcw,
 } from "lucide-react";
 import { streamChatMessage, getSuggestedQuestions, exportReport } from "../../lib/api";
-import { useAppState } from "../../lib/store";
-import { Link } from "react-router";
+import { useAppState, useAppDispatch } from "../../lib/store";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { StructuredAIResponse } from "../../lib/types";
 import { MarkdownText } from "../components/MarkdownText";
@@ -52,6 +53,8 @@ type ChatMessage = UserMessage | AssistantMessage;
 
 export default function Chat() {
   const { sessionId, documents, analysis } = useAppState();
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -276,6 +279,16 @@ export default function Chat() {
     handleExportChat();
     setDownloadOpen(false);
     toast.success("Chat exported!");
+  };
+
+  const handleNewSession = async () => {
+    try {
+      dispatch({ type: "RESET" });
+      navigate("/");
+      toast.success("Session cleared — upload new documents to start fresh.");
+    } catch {
+      toast.error("Failed to reset session.");
+    }
   };
 
   const docCount = documents.length;
@@ -540,6 +553,12 @@ export default function Chat() {
                   <ArrowLeft size={14} />
                 </GhostButton>
               </Link>
+
+              {/* New Session button */}
+              <GhostButton small onClick={() => { void handleNewSession(); }} title="Clear session and upload new documents">
+                <RotateCcw size={14} className="mr-1.5" />
+                <span className="hidden sm:inline">New Session</span>
+              </GhostButton>
             </div>
           </div>
 

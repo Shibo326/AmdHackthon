@@ -210,3 +210,17 @@ async def check_session(session_id: str):
         return JSONResponse(content={"valid": True})
     except SessionNotFoundError:
         return JSONResponse(status_code=404, content={"valid": False, "error": "Session not found.", "code": "SESSION_NOT_FOUND", "suggestion": "Please upload new documents to start a fresh session."})
+
+
+@router.post("/session/new")
+async def new_session():
+    """
+    Create a fresh empty session and return its ID.
+    The client uses this to reset state without uploading new files —
+    e.g. when the user clicks "New Session" in the chat UI.
+    """
+    session_manager = _session_manager
+    session_id = str(uuid.uuid4())
+    session_manager.create_session(session_id, documents=[])
+    logger.info(f"New empty session created: {session_id}")
+    return JSONResponse(content={"sessionId": session_id})

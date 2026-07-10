@@ -133,10 +133,40 @@ async def chat(request: ChatRequest):
         else:
             answer = data.get("answer", "")
             logger.info(f"[chat] Parsed OK. answer={len(answer)} chars, evidence={len(data.get('evidence', []))}")
-            # Safety: if answer accidentally contains a JSON array at the end, strip it
+
+            # Safety: if the answer field itself is a JSON string or starts with '{',
+            # it means the model put structured data into the answer field — extract it cleanly.
+            if isinstance(answer, dict):
+                # Model returned answer as a dict object — flatten to string
+                answer = answer.get("text", answer.get("content", str(answer)))
+            elif isinstance(answer, str):
+                stripped_ans = answer.strip()
+                # If answer looks like a raw JSON object/array, the model likely echoed the
+                # full response structure into the answer field — replace with a sensible fallback.
+                if stripped_ans.startswith("{") and stripped_ans.endswith("}"):
+                    try:
+                        inner = json.loads(stripped_ans)
+                        # It parsed as JSON — extract any nested text field
+                        answer = (
+                            inner.get("text")
+                            or inner.get("content")
+                            or inner.get("summary")
+                            or inner.get("answer")
+                            or stripped_ans  # keep as-is if no text field found
+                        )
+                        if not isinstance(answer, str):
+                            answer = str(answer)
+                    except json.JSONDecodeError:
+                        pass  # Not actually JSON — keep as-is
+
+            # Only strip truly dangling trailing JSON blobs (e.g. model appended evidence array to text).
+            # Use a narrower pattern that matches only arrays/objects at the very end preceded by whitespace,
+            # and only if the answer is long enough that stripping won't destroy meaningful content.
             import re as _re
-            answer = _re.sub(r'\s*\[[\s\S]*?\]\s*$', '', answer).strip()
-            answer = _re.sub(r'\s*\{[\s\S]*?\}\s*$', '', answer).strip()
+            if len(answer) > 100:
+                # Strip trailing JSON arrays that got accidentally appended
+                answer = _re.sub(r'\n\s*\[[\s\S]{20,}\]\s*$', '', answer).strip()
+                answer = _re.sub(r'\n\s*\{[\s\S]{20,}\}\s*$', '', answer).strip()
             # Parse structured response from JSON
             evidence_list = []
             for ev in data.get("evidence", []):
@@ -279,10 +309,32 @@ async def chat_stream(request: ChatRequest):
                 rec_str = ""
             else:
                 answer = data.get("answer", "")
-                # Safety: strip trailing JSON arrays/objects that got appended to answer
+                # Safety: if the answer field is a dict or a stringified JSON object,
+                # the model put structured data there — extract plain text.
+                if isinstance(answer, dict):
+                    answer = answer.get("text", answer.get("content", str(answer)))
+                elif isinstance(answer, str):
+                    stripped_ans = answer.strip()
+                    if stripped_ans.startswith("{") and stripped_ans.endswith("}"):
+                        try:
+                            inner = json.loads(stripped_ans)
+                            answer = (
+                                inner.get("text")
+                                or inner.get("content")
+                                or inner.get("summary")
+                                or inner.get("answer")
+                                or stripped_ans
+                            )
+                            if not isinstance(answer, str):
+                                answer = str(answer)
+                        except json.JSONDecodeError:
+                            pass
+
+                # Only strip truly dangling trailing JSON blobs
                 import re as _re
-                answer = _re.sub(r'\s*\[[\s\S]*?\]\s*$', '', answer).strip()
-                answer = _re.sub(r'\s*\{[\s\S]*?\}\s*$', '', answer).strip()
+                if len(answer) > 100:
+                    answer = _re.sub(r'\n\s*\[[\s\S]{20,}\]\s*$', '', answer).strip()
+                    answer = _re.sub(r'\n\s*\{[\s\S]{20,}\}\s*$', '', answer).strip()
 
                 # Build evidence list
                 evidence_list = []
