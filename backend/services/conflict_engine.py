@@ -13,7 +13,10 @@ class ConflictEngine:
     """
     Detects factual contradictions between documents in a session.
     Uses a single consolidated LLM call to analyze ALL documents at once,
-    instead of expensive pairwise comparisons (N*(N-1)/2 calls → 1 call).
+    instead of expensive pairwise comparisons (N*(N-1)/2 calls -> 1 call).
+
+    Uses the FAST model (gpt-oss-120b) — conflict detection is a structured
+    extraction task that doesn't require deep reasoning.
     """
 
     def __init__(self, llm_service: LLMService):
@@ -51,13 +54,15 @@ class ConflictEngine:
         system_prompt = get_system_prompt(document_names)
 
         logger.info(
-            f"Running consolidated conflict detection across {len(document_names)} documents (1 LLM call)"
+            f"Running consolidated conflict detection across {len(document_names)} documents (1 LLM call, fast model)"
         )
 
-        # Conflict detection: 1200 tokens — sufficient for up to 6 well-formed conflicts
+        # Conflict detection uses FAST model (gpt-oss-120b):
+        # - structured extraction task — no deep reasoning required
+        # - 1500 tokens: enough for up to 6 well-formed conflicts
         try:
             raw = await self.llm_service.complete(
-                system_prompt, prompt, max_tokens=1200
+                system_prompt, prompt, max_tokens=1500, fast=True
             )
             raw = _strip_json_fences(raw)
             conflicts = self._parse_conflicts(raw)
@@ -111,27 +116,22 @@ YOUR ANALYTICAL PROCESS:
 5. PRIORITIZE: Rank by impact — which conflicts need immediate resolution?
 
 WHAT COUNTS AS A CONFLICT:
-✓ Price/value discrepancies (e.g., contract says $100/unit, invoice charges $107)
-✓ Conflicting dates or deadlines (delivery by March 15 in one, April 1 in another)
-✓ Contradictory terms (Net 30 vs. Net 60 for the same relationship)
-✓ Mismatched quantities or specifications
-✓ Incompatible obligations (Party A must do X in one document, opposite in another)
-✓ Inconsistent party identification or role definitions
+- Price/value discrepancies (e.g., contract says $100/unit, invoice charges $107)
+- Conflicting dates or deadlines (delivery by March 15 in one, April 1 in another)
+- Contradictory terms (Net 30 vs. Net 60 for the same relationship)
+- Mismatched quantities or specifications
+- Incompatible obligations (Party A must do X in one document, opposite in another)
+- Inconsistent party identification or role definitions
 
 NOT A CONFLICT:
-✗ Different levels of detail about DIFFERENT subjects
-✗ Information in one document simply absent from another (that's a gap, not a conflict)
-✗ Stylistic or formatting differences
-✗ Complementary information that doesn't contradict
-
-FOR EACH CONFLICT — THINK DEEPER:
-- What's the financial exposure if the wrong version is followed?
-- Which document would likely prevail in a legal dispute? (consider: specificity, recency, hierarchy of documents)
-- Is this an innocent discrepancy or a red flag suggesting systematic issues?
+- Different levels of detail about DIFFERENT subjects
+- Information in one document simply absent from another (that's a gap, not a conflict)
+- Stylistic or formatting differences
+- Complementary information that doesn't contradict
 
 SEVERITY:
-- HIGH: Direct financial impact (active overcharging), legal liability, or approaching deadline. Resolution within days.
-- MEDIUM: Material inconsistency that will cause problems if not resolved before next milestone. Resolution within 2 weeks.
+- HIGH: Direct financial impact (active overcharging), legal liability, or approaching deadline.
+- MEDIUM: Material inconsistency that will cause problems if not resolved before next milestone.
 - LOW: Minor discrepancy — worth documenting but limited immediate impact.
 
 If no genuine conflicts exist, return an empty array. Do NOT invent conflicts to appear thorough.

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 
 from models.document import Chunk
@@ -10,7 +11,6 @@ from models.response import (
     Recommendation,
     Risk,
 )
-from prompts.executive_summary import build_summary_prompt
 from prompts.recommendation import build_recommendation_prompt
 from prompts.risk_analysis import build_risk_prompt
 from prompts.system_prompt import get_system_prompt
@@ -21,8 +21,8 @@ from services.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # Timeout for individual LLM calls (seconds)
-# Reduced from 75s — llama-4-maverick is significantly faster than gpt-oss-120b
-LLM_CALL_TIMEOUT = 45
+# deepseek-v4-0324 reasoning model may need a bit more time than gpt-oss-120b
+LLM_CALL_TIMEOUT = 80
 
 # Prompt for comparison matrix — adapts to any document type with deep analytical reasoning
 COMPARISON_MATRIX_PROMPT = """Based on the document content above, create a detailed comparison matrix that a decision-maker can use to make an immediate choice.
@@ -69,13 +69,16 @@ class AnalysisService:
     Orchestrates the full multi-document AI analysis pipeline.
 
     Performance-optimized architecture:
+    - Tiered model routing: deepseek-v4-0324 for reasoning, gpt-oss-120b for structured tasks
+    - SINGLE_CALL_MODE: combine all analysis into 1 call (set SINGLE_CALL_MODE=true in env)
     - All 5 LLM calls run in parallel (no batching)
     - Suggested questions merged into executive summary call (saves 1 call)
     - Conflict detection consolidated to 1 call for ALL docs (saves N*(N-1)/2 - 1 calls)
-    - Per-call timeout of 90s with graceful partial results
-    - Reduced max_tokens where possible
+    - Per-call timeout of 80s with graceful partial results
+    - Token budgets tuned per call type
 
-    Total LLM calls: 5 (was 6+ sequential/batched, up to 34 with pairwise conflicts)
+    Total LLM calls: 5 parallel (was 6+ sequential/batched, up to 34 with pairwise conflicts)
+    SINGLE_CALL_MODE: 1 call total (emergency speed fallback)
     """
 
     def __init__(
@@ -87,6 +90,7 @@ class AnalysisService:
         self.llm_service = llm_service
         self.conflict_engine = conflict_engine
         self.session_manager = session_manager
+        self._single_call_mode = os.getenv("SINGLE_CALL_MODE", "false").lower() == "true"
 
     async def run_full_analysis(
         self,
@@ -95,16 +99,26 @@ class AnalysisService:
         doc_names: list[str],
     ) -> AnalysisResult:
         """
-        Run the complete analysis pipeline — all 5 calls in parallel.
-        llama-4-maverick on Fireworks 'fast' tier runs at 200-300 tok/s,
-        so parallel is safe and optimal. Target: <10s wall time.
+        Run the complete analysis pipeline.
+
+        Normal mode: 5 parallel LLM calls (tiered models).
+        SINGLE_CALL_MODE: 1 mega LLM call (extreme speed, lower quality).
+
+        Target: <35s wall time for 2 documents in normal mode.
         """
         system_prompt = get_system_prompt(doc_names)
+
+        if self._single_call_mode:
+            logger.info(
+                f"[SINGLE_CALL_MODE] Starting single-mega-call analysis for session {session_id} "
+                f"({len(chunks)} chunks, {len(doc_names)} documents)"
+            )
+            return await self._run_single_call_analysis(session_id, system_prompt, chunks, doc_names)
 
         logger.info(
             f"Starting full analysis for session {session_id} "
             f"({len(chunks)} chunks, {len(doc_names)} documents) — 5 parallel LLM calls "
-            f"[model: llama-4-maverick, tier: fast]"
+            f"[quality: deepseek-v4-0324, fast: gpt-oss-120b, timeout: {LLM_CALL_TIMEOUT}s]"
         )
 
         if chunks:
@@ -182,6 +196,97 @@ class AnalysisService:
         logger.info(f"Analysis complete for session {session_id}")
         return analysis
 
+    async def _run_single_call_analysis(
+        self,
+        session_id: str,
+        system_prompt: str,
+        chunks: list[Chunk],
+        doc_names: list[str],
+    ) -> AnalysisResult:
+        """
+        Emergency speed fallback: all analysis in ONE LLM call.
+        Activated by SINGLE_CALL_MODE=true env var.
+        """
+        from prompts.executive_summary import _format_chunks
+        context = _format_chunks(chunks)
+
+        try:
+            data = await asyncio.wait_for(
+                self.llm_service.single_mega_call(system_prompt, context, doc_names),
+                timeout=LLM_CALL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise LLMParseError(f"Single mega-call timed out after {LLM_CALL_TIMEOUT}s")
+
+        # Parse each field with graceful fallbacks
+        summary = data.get("executiveSummary", "Analysis complete.")
+
+        risks = []
+        for i, item in enumerate(data.get("risks", [])):
+            try:
+                if isinstance(item, dict):
+                    item = {
+                        "id": item.get("id", f"r{i+1}"),
+                        "level": item.get("level", "MEDIUM").upper(),
+                        "description": item.get("description", ""),
+                        "sourceDocument": item.get("sourceDocument", ""),
+                        "category": item.get("category", "Operational"),
+                    }
+                risks.append(Risk(**item))
+            except Exception as e:
+                logger.warning(f"[single-call] Skipping malformed risk: {e}")
+
+        matrix = []
+        for item in data.get("comparisonMatrix", []):
+            try:
+                matrix.append(ComparisonRow(**item))
+            except Exception as e:
+                logger.warning(f"[single-call] Skipping malformed matrix row: {e}")
+
+        recommendation = Recommendation(
+            title="Analysis Complete",
+            summary="Please review the risks and comparison matrix for details.",
+            nextSteps=["Review identified risks", "Compare document options", "Ask the AI Copilot"],
+            confidence=0.6,
+        )
+        rec_data = data.get("recommendation")
+        if rec_data and isinstance(rec_data, dict):
+            try:
+                recommendation = Recommendation(**rec_data)
+            except Exception as e:
+                logger.warning(f"[single-call] Recommendation parse failed: {e}")
+
+        questions = data.get("suggestedQuestions", [])
+        if not isinstance(questions, list):
+            questions = []
+        questions = [q for q in questions if isinstance(q, str)][:6]
+
+        # Conflict detection still separate (needs doc grouping logic)
+        conflicts = []
+        raw_conflicts = data.get("conflicts", [])
+        if not raw_conflicts and len(doc_names) >= 2:
+            # Run conflict detection as a separate fast call
+            try:
+                conflicts = await asyncio.wait_for(
+                    self.conflict_engine.detect(chunks, doc_names),
+                    timeout=LLM_CALL_TIMEOUT,
+                )
+            except Exception as e:
+                logger.warning(f"[single-call] Conflict detection failed: {e}")
+
+        analysis = AnalysisResult(
+            analyzedAt=datetime.utcnow(),
+            executiveSummary=summary,
+            risks=risks,
+            comparisonMatrix=matrix,
+            conflicts=conflicts,
+            recommendation=recommendation,
+            suggestedQuestions=questions,
+        )
+        self.session_manager.store_analysis(session_id, analysis)
+        logger.info(f"[SINGLE_CALL_MODE] Analysis complete for session {session_id}")
+        return analysis
+
     async def _with_timeout(self, coro, label: str):
         """Wrap a coroutine with a timeout. Returns the exception on timeout."""
         try:
@@ -201,25 +306,34 @@ class AnalysisService:
     ) -> tuple[str, list[str]]:
         """
         Generate executive summary AND suggested questions in a single LLM call.
+        Uses the QUALITY model (deepseek-v4-0324) for deep reasoning.
         Merging these saves one full LLM round-trip (10-60s).
         """
-        base_prompt = build_summary_prompt(chunks)
+        from prompts.executive_summary import _format_chunks
+        context = _format_chunks(chunks)
+        doc_names = list(dict.fromkeys(c.source_document for c in chunks))
+        doc_list = ", ".join(doc_names) if doc_names else "the uploaded document"
 
-        # Append the suggested questions instruction to the summary prompt
-        merged_prompt = base_prompt.rstrip()
-        # Replace the JSON return format to include questions
-        merged_prompt = merged_prompt.replace(
-            'Return ONLY valid JSON:\n{\n  "executiveSummary": "<4-6 sentence executive briefing. Lead with the key insight. Include specific figures. Add one expert context point. Flag any urgency. Close with the strategic implication or recommended direction.>"\n}',
-            '''Also generate 5 short follow-up questions (max 10 words each) that a decision-maker would most likely want to ask about these documents. Make them SPECIFIC to the content — not generic questions like "What are the key terms?" but rather "Is the $245K/year rate competitive for this scope?"
+        merged_prompt = f"""You are a senior analyst. Write an executive summary for a decision-maker based on these documents.
 
-Return ONLY valid JSON:
-{
-  "executiveSummary": "<4-6 sentence executive briefing. Lead with the key insight. Include specific figures. Add one expert context point. Flag any urgency. Close with the strategic implication or recommended direction.>",
+DOCUMENTS: {doc_list}
+
+{context}
+
+Lead with the single most important finding. Include specific figures. Flag urgency. End with a clear recommended action.
+
+Also generate 5 short follow-up questions (max 10 words each) that a decision-maker would most likely want to ask. Make them SPECIFIC to the document content — not generic questions like "What are the key terms?" but rather "Is the $245K/year rate competitive for this scope?"
+
+Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
+{{
+  "executiveSummary": "<4-6 sentence executive briefing with specific figures, key insight, urgency, and recommended direction>",
   "suggestedQuestions": ["question1", "question2", "question3", "question4", "question5"]
-}''',
-        )
+}}"""
 
-        raw = await self.llm_service.complete(system_prompt, merged_prompt, max_tokens=900)
+        # Quality model (deepseek-v4-0324) for nuanced summary; 1200 tokens is enough
+        raw = await self.llm_service.complete(
+            system_prompt, merged_prompt, max_tokens=1200, fast=False
+        )
         raw = _strip_json_fences(raw)
 
         # Extra safety: if raw still starts with prose (not JSON), find the JSON block
@@ -245,10 +359,12 @@ Return ONLY valid JSON:
         system_prompt: str,
         chunks: list[Chunk],
     ) -> list[Risk]:
-        """Generate risk analysis list."""
+        """Generate risk analysis list using the QUALITY model (deepseek-v4-0324)."""
         user_prompt = build_risk_prompt(chunks)
-        # Risks: 1200 tokens is sufficient for up to 8 well-formed risk items
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1200)
+        # Quality model needs 2000 tokens to output 5-8 risk items without truncation.
+        raw = await self.llm_service.complete(
+            system_prompt, user_prompt, max_tokens=2000, fast=False
+        )
         logger.info(f"[risks] raw response length: {len(raw)} chars, first 200: {raw[:200]!r}")
         raw = _strip_json_fences(raw)
         logger.info(f"[risks] after strip, first 200: {raw[:200]!r}")
@@ -293,8 +409,37 @@ Return ONLY valid JSON:
                 except Exception:
                     pass
 
+        # Strategy 5: retry LLM with explicit JSON-only instruction
         if data is None:
-            logger.warning(f"[risks] ALL parse strategies failed. Raw (500 chars): {raw[:500]!r}")
+            logger.warning(f"[risks] ALL parse strategies failed on first attempt — retrying with stricter prompt")
+            retry_prompt = (
+                user_prompt
+                + "\n\nCRITICAL: Your previous response was not valid JSON. "
+                "You MUST respond with ONLY a valid JSON object starting with { and ending with }. "
+                "No preamble, no explanation, no markdown code fences. Start your response with { and end with }."
+            )
+            try:
+                raw2 = await self.llm_service.complete(
+                    system_prompt, retry_prompt, max_tokens=2000, fast=False
+                )
+                raw2 = _strip_json_fences(raw2)
+                logger.info(f"[risks] retry response, first 200: {raw2[:200]!r}")
+                try:
+                    data = json.loads(raw2)
+                except Exception:
+                    brace_start = raw2.find("{")
+                    brace_end = raw2.rfind("}")
+                    if brace_start != -1 and brace_end > brace_start:
+                        try:
+                            cleaned2 = _re.sub(r",\s*([}\]])", r"\1", raw2[brace_start:brace_end + 1])
+                            data = json.loads(cleaned2)
+                        except Exception:
+                            pass
+            except Exception as retry_err:
+                logger.warning(f"[risks] retry LLM call failed: {retry_err}")
+
+        if data is None:
+            logger.warning(f"[risks] ALL parse strategies failed including retry. Raw (500 chars): {raw[:500]!r}")
             return []
 
         risks_data = data.get("risks", []) if isinstance(data, dict) else []
@@ -322,8 +467,11 @@ Return ONLY valid JSON:
         chunks: list[Chunk],
         doc_names: list[str],
     ) -> list[ComparisonRow]:
-        """Generate comparison matrix rows with reduced token budget."""
-        # Build context from chunks
+        """
+        Generate comparison matrix rows.
+        Uses FAST model (gpt-oss-120b) — structured JSON output, no deep reasoning needed.
+        max_tokens=500 is sufficient for 5-8 matrix rows.
+        """
         from prompts.executive_summary import _format_chunks
 
         context = _format_chunks(chunks)
@@ -334,20 +482,19 @@ DOCUMENT CONTEXT:
 
 {COMPARISON_MATRIX_PROMPT}"""
 
-        # Reduced max_tokens: 2048 instead of default 4096
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=1500)
+        # FAST model — structured output task; 500 tokens for 5-8 rows
+        raw = await self.llm_service.complete(
+            system_prompt, user_prompt, max_tokens=500, fast=True
+        )
         raw = _strip_json_fences(raw)
 
         # Robust JSON extraction — handle common LLM formatting issues
         data = None
-        parse_attempts = [
-            raw,  # Try as-is first
-        ]
-        # Try extracting JSON object from surrounding text
+        parse_attempts = [raw]
         brace_start = raw.find("{")
         brace_end = raw.rfind("}")
         if brace_start != -1 and brace_end > brace_start:
-            parse_attempts.append(raw[brace_start : brace_end + 1])
+            parse_attempts.append(raw[brace_start: brace_end + 1])
 
         for attempt in parse_attempts:
             try:
@@ -360,10 +507,8 @@ DOCUMENT CONTEXT:
         if data is None:
             import re
 
-            cleaned = raw[brace_start : brace_end + 1] if brace_start != -1 else raw
-            # Remove trailing commas before } or ]
+            cleaned = raw[brace_start: brace_end + 1] if brace_start != -1 else raw
             cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-            # Replace single quotes with double quotes (careful with apostrophes)
             cleaned = cleaned.replace("'", '"')
             try:
                 data = json.loads(cleaned)
@@ -389,9 +534,15 @@ DOCUMENT CONTEXT:
         system_prompt: str,
         chunks: list[Chunk],
     ) -> Recommendation:
-        """Generate procurement recommendation."""
+        """
+        Generate procurement recommendation.
+        Uses QUALITY model (deepseek-v4-0324) — requires strategic reasoning.
+        max_tokens=800 is sufficient for a recommendation with 3-5 next steps.
+        """
         user_prompt = build_recommendation_prompt(chunks)
-        raw = await self.llm_service.complete(system_prompt, user_prompt, max_tokens=800)
+        raw = await self.llm_service.complete(
+            system_prompt, user_prompt, max_tokens=800, fast=False
+        )
         raw = _strip_json_fences(raw)
 
         try:
