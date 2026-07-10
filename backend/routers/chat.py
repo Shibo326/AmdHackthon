@@ -99,6 +99,9 @@ async def chat(request: ChatRequest):
         # Only remove true control characters — do NOT escape \n or \t as that breaks JSON strings
         raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
 
+        # Fix escaped single quotes used as JSON keys (\'key\' -> "key")
+        raw = re.sub(r"\\'([^']+)\\'", r'"\1"', raw)
+
         # Try to parse JSON, with fallback extraction
         data = None
         try:
@@ -240,6 +243,9 @@ async def chat_stream(request: ChatRequest):
             import re
             # Only remove true control characters — do NOT escape \n or \t as that breaks JSON strings
             raw = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+
+            # Fix escaped single quotes used as JSON keys (\'key\' -> "key")
+            raw = re.sub(r"\\'([^']+)\\'", r'"\1"', raw)
 
             # Robust JSON extraction — same logic as /chat endpoint
             data = None
