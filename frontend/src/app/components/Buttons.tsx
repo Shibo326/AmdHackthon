@@ -15,16 +15,17 @@ export function PrimaryButton({ children, small = false, disabled, ...props }: P
         color: disabled ? 'var(--ghost)' : '#F0F4FF',
         borderRadius: 'var(--radius-btn)',
         fontFamily: "'Inter', sans-serif",
-        fontSize: '14px',
+        fontSize: small ? '13px' : '14px',
         fontWeight: 500,
         lineHeight: '20px',
-        padding: small ? '8px 16px' : '12px 24px',
+        padding: small ? '8px 12px' : '12px 24px',
         height: small ? '36px' : '44px',
         border: 'none',
         boxShadow: disabled ? 'none' : '0 0 20px var(--volt-glow)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         transition: 'background 0.15s, box-shadow 0.15s, opacity 0.15s',
+        whiteSpace: 'nowrap',
       }}
       onMouseOver={(e) => {
         if (!disabled) {
@@ -61,14 +62,15 @@ export function GhostButton({ children, small = false, disabled, ...props }: Gho
         borderColor: 'var(--rule)',
         color: 'var(--ash)',
         fontFamily: "'Inter', sans-serif",
-        fontSize: '14px',
+        fontSize: small ? '13px' : '14px',
         fontWeight: 500,
         lineHeight: '20px',
-        padding: small ? '8px 16px' : '12px 24px',
+        padding: small ? '8px 12px' : '12px 24px',
         height: small ? '36px' : '44px',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         transition: 'border-color 0.15s, color 0.15s, opacity 0.15s',
+        whiteSpace: 'nowrap',
       }}
       onMouseOver={(e) => {
         if (!disabled) {

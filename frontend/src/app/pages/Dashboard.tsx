@@ -308,16 +308,16 @@ export default function Dashboard() {
                 {isReanalyzing ? (
                   <div className="flex items-center gap-1.5">
                     <div className="animate-spin-slow w-3 h-3 rounded-full" style={{ border: "2px solid var(--ghost)", borderTopColor: "var(--volt)" }} />
-                    Analyzing…
+                    <span className="hidden sm:inline">Analyzing…</span>
                   </div>
-                ) : "Re-analyze"}
+                ) : <><span className="hidden sm:inline">Re-analyze</span><span className="sm:hidden">↻</span></>}
               </GhostButton>
-              <Link to="/chat"><PrimaryButton small>Ask a Question</PrimaryButton></Link>
+              <Link to="/chat"><PrimaryButton small><span className="hidden sm:inline">Ask a Question</span><span className="sm:hidden">Chat</span></PrimaryButton></Link>
               {/* Export Dropdown */}
               <div className="relative" ref={exportDropdownRef}>
                 <GhostButton small onClick={() => setExportDropdownOpen(!exportDropdownOpen)} disabled={isExporting}>
-                  <FileDown size={14} className="mr-1.5" />
-                  {isExporting ? "Exporting…" : "Export"}
+                  <FileDown size={14} className="sm:mr-1.5" />
+                  <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export"}</span>
                   <ChevronDown size={12} className="ml-1" style={{ transform: exportDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
                 </GhostButton>
                 {exportDropdownOpen && (
@@ -404,7 +404,7 @@ export default function Dashboard() {
                         <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>ROCm-accelerated inference · HBM3 memory architecture</div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-6">
+                    <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                       {[
                         { label: "Analysis Time", value: processingSeconds ? `${processingSeconds}s` : "< 60s", color: "var(--cleared)" },
                         { label: "Speedup vs CPU", value: liveSpeedup, color: "var(--volt)" },
@@ -412,7 +412,7 @@ export default function Dashboard() {
                         { label: "Risks Found", value: `${analysis.risks.length}`, color: hasHighRisk ? "var(--amd-signal)" : "var(--caution)" },
                       ].map(stat => (
                         <div key={stat.label} className="flex flex-col items-center">
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "20px", fontWeight: 600, color: stat.color }}>{stat.value}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(16px, 4vw, 20px)", fontWeight: 600, color: stat.color }}>{stat.value}</span>
                           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>{stat.label}</span>
                         </div>
                       ))}
@@ -440,17 +440,17 @@ export default function Dashboard() {
                     <div style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ghost)" }}>vs. manual procurement review</div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-6">
+                <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                   <div className="flex flex-col items-center">
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "16px", fontWeight: 400, color: "var(--ash)" }}>4-6 hrs</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(14px, 3vw, 16px)", fontWeight: 400, color: "var(--ash)" }}>4-6 hrs</span>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>Time</span>
                   </div>
                   <div className="flex flex-col items-center">
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "16px", fontWeight: 700, color: "var(--cleared)" }}>{processingSeconds ? `${processingSeconds}s` : "< 60s"}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(14px, 3vw, 16px)", fontWeight: 700, color: "var(--cleared)" }}>{processingSeconds ? `${processingSeconds}s` : "< 60s"}</span>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>AI Speed</span>
                   </div>
                   <div className="flex flex-col items-center">
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "20px", fontWeight: 700, color: "var(--cleared)" }}>$850+</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(16px, 4vw, 20px)", fontWeight: 700, color: "var(--cleared)" }}>$850+</span>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "10px", fontWeight: 500, color: "var(--ghost)", whiteSpace: "nowrap" }}>Per Review</span>
                   </div>
                 </div>
@@ -489,7 +489,7 @@ export default function Dashboard() {
                           </span>
                           <RiskBadge variant={conflict.severity} />
                         </div>
-                        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: "12px" }}>
+                        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", marginBottom: "12px" }}>
                           {[conflict.documentA, conflict.documentB].map((doc, i) => (
                             <div key={i}>
                               <div className="mb-2"><EvidenceTag filename={doc.name} /></div>

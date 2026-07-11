@@ -3,7 +3,6 @@ import { NavigationBar } from "../components/NavigationBar";
 import { GhostButton, PrimaryButton } from "../components/Buttons";
 import { EvidenceTag, EvidenceBox } from "../components/Badges";
 import {
-  Paperclip,
   Send,
   AlertTriangle,
   ArrowRight,
@@ -578,7 +577,7 @@ export default function Chat() {
                 </p>
                 {/* Inline suggested questions grid */}
                 {quickQuestions.length > 0 && (
-                  <div className="w-full grid gap-2" style={{ maxWidth: "560px", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                  <div className="w-full grid gap-2" style={{ maxWidth: "560px", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))" }}>
                     {quickQuestions.slice(0, 6).map((q, idx) => (
                       <button
                         key={idx}
@@ -817,7 +816,6 @@ export default function Chat() {
               onFocus={(e) => { e.currentTarget.style.borderColor = "var(--volt-border)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--rule)"; }}
             >
-              <Paperclip size={18} style={{ color: "var(--ghost)", flexShrink: 0 }} />
               <input
                 ref={inputRef}
                 type="text"
@@ -850,16 +848,18 @@ export default function Chat() {
       {sourceModal && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center animate-fadeIn"
-          style={{ background: "rgba(0,0,0,0.7)", padding: "16px" }}
+          style={{ background: "rgba(0,0,0,0.7)", padding: "0 16px 16px 16px" }}
           onClick={() => setSourceModal(null)}
         >
           <div
-            className="w-full rounded-2xl p-5 animate-slideUp"
+            className="w-full rounded-t-2xl sm:rounded-2xl p-5 animate-slideUp"
             style={{
               maxWidth: "560px",
               background: "var(--lead)",
               border: "1px solid var(--volt-border)",
               boxShadow: "0 0 40px rgba(59,123,246,0.12)",
+              maxHeight: "80vh",
+              overflowY: "auto",
             }}
             onClick={(e) => e.stopPropagation()}
           >

@@ -1,6 +1,6 @@
 ---
 name: clausify-ui-redesign
-description: Redesigns all 4 frontend pages (Landing, Dashboard, Chat, Demo) using the Clausify design system. Use this agent when you need to update the visual design of the frontend without breaking any existing logic, API calls, state management, or routing. Colors: --ink #0C0E14, --lead #1A1D27, --volt #00D4FF, --paper #F2EFE8, --amd-signal #ED1C24. Fonts: Syne 700/800 (display) + IBM Plex Sans (body) + IBM Plex Mono (mono). Stack: Vite + React + TypeScript + Tailwind.
+description: Redesigns frontend pages using the Clausify design system. Pure visual changes only — never touches API calls, state management, or routing logic. Colors use CSS custom properties (--ink, --lead, --volt, --paper, --amd-signal). Fonts: DM Sans (display) + Inter (body) + JetBrains Mono (mono). Stack: Vite + React + TypeScript + Tailwind + CSS variables.
 tools: ["read", "write"]
 ---
 

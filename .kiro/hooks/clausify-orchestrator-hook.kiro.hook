@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Clausify Orchestrator",
+  "description": "Auto-runs on every prompt to analyze the request and delegate to the appropriate specialist agent (frontend, backend, performance, testing, deployment, etc.)",
+  "version": "1",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "You are the Clausify Orchestrator. Analyze this prompt and determine the best approach:\n\n1. If it's a simple task you can handle directly (typo fix, single file edit, git operation), just do it.\n2. If it requires specialist knowledge, delegate to the appropriate sub-agent:\n   - UI/design changes → invoke clausify-ui-redesign agent\n   - Frontend logic/API fixes → invoke clausify-frontend-integration agent\n   - Backend hardening → invoke clausify-backend-hardening agent\n   - Performance optimization → invoke clausify-performance agent\n   - Testing → invoke clausify-testing agent\n   - Deployment → invoke clausify-deployment agent\n   - Final validation → invoke clausify-demo-validator agent\n   - Bug investigation → invoke clausify-bug-investigator agent\n\n3. If the task spans multiple domains, plan the execution order and run agents sequentially.\n4. Always verify changes compile after work is done (run vite build for frontend changes).\n\nRead relevant code first before deciding. Be efficient — don't over-delegate simple tasks."
+  }
+}

@@ -7,7 +7,7 @@ import {
 } from 'react';
 import type { Analysis, PersistedChatMessage, UploadedDocument } from './types';
 
-// Max messages to retain in localStorage (prevents bloat on long conversations)
+// Max messages to retain in sessionStorage (prevents bloat on long conversations)
 const MAX_PERSISTED_MESSAGES = 100;
 
 // The demo session ID used by the backend demo endpoint
@@ -38,11 +38,11 @@ const initialState: AppState = {
   isDemo: false,
 };
 
-// ── localStorage persistence ───────────────────────────────────────────────────
+// ── sessionStorage persistence (clears when browser is closed) ─────────────────
 
 function loadPersistedState(): AppState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return initialState;
     const saved = JSON.parse(raw) as Partial<AppState>;
     if (!saved.sessionId) return initialState;
@@ -63,12 +63,12 @@ function loadPersistedState(): AppState {
 function persistState(state: AppState): void {
   try {
     if (!state.sessionId) {
-      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
       return;
     }
-    // Cap messages to last MAX_PERSISTED_MESSAGES to prevent localStorage bloat
+    // Cap messages to last MAX_PERSISTED_MESSAGES to prevent storage bloat
     const messagesToPersist = state.messages.slice(-MAX_PERSISTED_MESSAGES);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
       sessionId: state.sessionId,
       documents: state.documents,
       analysis: state.analysis,

@@ -40,7 +40,7 @@ function PaperCard({ file, index, onRemove }: PaperCardProps) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      style={{ width: "220px" }}
+      style={{ width: "min(220px, calc(50% - 8px))", minWidth: "140px" }}
     >
       {/* Static rotation lives on this inner wrapper so it can coexist with
           framer-motion's own transform (opacity/y) on the outer motion.div. */}

@@ -15,7 +15,7 @@ import {
 import { Link } from "react-router";
 import { uploadDocuments, analyzeDocuments, warmupServer } from "../../lib/api";
 import { toast } from "sonner";
-import { useAppDispatch, useAppState } from "../../lib/store";
+import { useAppDispatch } from "../../lib/store";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -33,13 +33,12 @@ const SLOW_MESSAGES = [
   { afterSeconds: 20, message: "Server is warming up — hang tight..." },
   { afterSeconds: 40, message: "Still running — AMD MI300X is processing your documents..." },
   { afterSeconds: 70, message: "Almost there — large documents take a bit longer..." },
-  { afterSeconds: 100, message: "This is taking longer than usual. Please wait..." },
+  { afterSeconds: 100, message: "Due to high demand, the server is warming up to run properly. Please retry your analysis — it should work on the next attempt!" },
 ];
 
 export default function Landing() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { sessionId, analysis } = useAppState();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [files, setFiles] = useState<File[]>([]);
@@ -57,12 +56,9 @@ export default function Landing() {
     warmupServer();
   }, []);
 
-  // If user navigates back and has an active session, redirect to dashboard
-  useEffect(() => {
-    if (sessionId && analysis && !isLoading) {
-      navigate("/dashboard");
-    }
-  }, []); // only on mount
+  // Note: We do NOT auto-redirect to dashboard even if session exists,
+  // because user may intentionally navigate here to upload more documents
+  // (via "← Upload", "Upload More", etc.)
 
   // Fetch live AMD benchmark on mount (non-blocking, best-effort)
   useEffect(() => {
@@ -171,12 +167,21 @@ export default function Landing() {
     setLoadingStage(0);
 
     // Start elapsed timer
+    let hasShownTimeoutToast = false;
     const timerInterval = setInterval(() => {
       setElapsedSeconds((prev) => {
         const next = prev + 1;
         // Update slow message based on elapsed time
         const msg = [...SLOW_MESSAGES].reverse().find((m) => next >= m.afterSeconds);
         setSlowMessage(msg?.message ?? null);
+        // Show a toast notification at 100 seconds
+        if (next === 100 && !hasShownTimeoutToast) {
+          hasShownTimeoutToast = true;
+          toast.warning(
+            "Due to high demand, the server is still warming up. If it doesn't complete soon, please retry — it usually works on the next attempt!",
+            { duration: 12000 }
+          );
+        }
         return next;
       });
     }, 1000);
@@ -259,11 +264,11 @@ export default function Landing() {
 
       if (lower.includes("timed out") || lower.includes("timeout")) {
         if (pendingSessionId) {
-          msg = "Connection dropped during analysis — your documents are still uploaded. Click 'Retry Analysis' to continue without re-uploading.";
+          msg = "Due to high demand, the server is warming up to run properly. Don't worry — your documents are still uploaded. Click 'Retry Analysis' to try again, it usually works on the next attempt!";
         } else {
-          msg = "Analysis is taking longer than expected. The server may have been sleeping — click 'Retry Analysis' to try again (your files stay uploaded).";
+          msg = "Due to high demand, the server is warming up to run properly. Click 'Retry Analysis' to try again — it usually works on the next attempt!";
         }
-        toastMsg = "Timeout — click Retry to resume";
+        toastMsg = "Server warming up — click Retry to try again";
       } else if (lower.includes("rate") || lower.includes("429") || lower.includes("quota")) {
         msg = "AI service is busy right now. Please wait 60 seconds and try again.";
         toastMsg = msg;
@@ -361,7 +366,7 @@ export default function Landing() {
             animationDelay: "0.08s",
             fontFamily: "'Inter', sans-serif",
             fontWeight: 400,
-            fontSize: "18px",
+            fontSize: "clamp(15px, 3.5vw, 18px)",
             lineHeight: 1.6,
             color: "var(--ash)",
             maxWidth: "min(560px, 92vw)",

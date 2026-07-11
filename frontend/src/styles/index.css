@@ -152,6 +152,34 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── Mobile-specific overrides ────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Prevent font boosting on mobile */
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Ensure key interactive elements have proper touch targets */
+  nav button,
+  nav a,
+  input[type="file"] + div button {
+    min-height: 40px;
+  }
+
+  /* Tighter padding on very small screens */
+  .mobile-tight {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  /* Ultra-narrow screens (iPhone SE etc.) — prevent horizontal overflow */
+  .mobile-tight {
+    padding: 8px;
+  }
+}
+
 /* ── Safe-area support for notched phones ─────────────────────────────────── */
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .safe-top    { padding-top:    env(safe-area-inset-top,    0px); }

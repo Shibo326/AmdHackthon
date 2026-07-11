@@ -1,15 +1,26 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate, useLocation } from "react-router";
 import { Zap, Menu, X } from "lucide-react";
 
-function scrollToHowItWorks() {
-  const el = document.getElementById("how-it-works");
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-  } else {
-    // If we're not on the landing page yet, navigate there with the hash
-    window.location.href = "/#how-it-works";
-  }
+function useScrollToHowItWorks() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  return () => {
+    const el = document.getElementById("how-it-works");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (location.pathname !== "/") {
+      // Navigate to landing page first, then scroll after render
+      navigate("/");
+      setTimeout(() => {
+        const target = document.getElementById("how-it-works");
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 300);
+    }
+  };
 }
 
 interface NavigationBarProps {
@@ -18,6 +29,7 @@ interface NavigationBarProps {
 
 export function NavigationBar({ showDemo = true }: NavigationBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const scrollToHowItWorks = useScrollToHowItWorks();
 
   return (
     <>
@@ -130,28 +142,6 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
                 Try Demo
               </button>
             </Link>
-            <Link to="/">
-              <button
-                className="px-4 py-2 h-9 rounded-lg transition-all"
-                style={{
-                  background: "var(--volt)",
-                  color: "var(--ink)",
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  border: "none",
-                  borderRadius: "var(--radius-btn)",
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.filter = "brightness(1.1)";
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.filter = "none";
-                }}
-              >
-                Launch App
-              </button>
-            </Link>
           </div>
         )}
 
@@ -226,23 +216,6 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
               }}
             >
               Try Demo
-            </button>
-          </Link>
-          <Link to="/" onClick={() => setMenuOpen(false)}>
-            <button
-              className="w-full px-4 py-3 rounded-lg"
-              style={{
-                background: "var(--volt)",
-                color: "var(--ink)",
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "15px",
-                fontWeight: 500,
-                border: "none",
-                cursor: "pointer",
-                borderRadius: "var(--radius-btn)",
-              }}
-            >
-              Launch App
             </button>
           </Link>
         </div>

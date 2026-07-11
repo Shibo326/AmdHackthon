@@ -498,7 +498,7 @@ export default function Demo() {
                       </span>
                       <RiskBadge variant={primaryConflict.severity} />
                     </div>
-                    <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                    <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))" }}>
                       {[primaryConflict.documentA, primaryConflict.documentB].map((doc, i) => (
                         <div key={i} className="rounded-lg p-3" style={{ background: "rgba(237,28,36,0.06)", border: "1px solid rgba(237,28,36,0.15)" }}>
                           <div className="mb-2"><EvidenceTag filename={doc.name} /></div>
@@ -513,7 +513,7 @@ export default function Demo() {
             )}
 
             {/* Analysis Cards */}
-            <div className="grid gap-4 sm:gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+            <div className="grid gap-4 sm:gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
               {/* Executive Summary */}
               <Card>
                 <div className="flex items-center justify-between mb-3">
