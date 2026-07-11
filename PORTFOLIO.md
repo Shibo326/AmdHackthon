@@ -380,9 +380,13 @@ Analysis data is session-specific and shouldn't persist across browser sessions.
 - **SessionGuard** — checks session validity on app mount, dispatches RESET if the backend reports the session expired (container restart, TTL expiry)
 - **Auto-retry on network drop** — frontend automatically retries analysis once on timeout/network errors, reusing the already-uploaded session so files don't need re-uploading
 - **Warmup ping** — fires `POST /api/warmup` on Landing page mount to pre-heat Railway from cold start before the user clicks Analyze (saves 10–30s of cold start time)
-- **100-second warmup notification** — if the backend doesn't respond to warmup within a few seconds, shows a toast explaining the server is waking up and to wait
+- **100-second warmup notification** — if analysis exceeds 100 seconds, a toast notification and inline message inform the user the server is warming up due to high demand, with friendly messaging encouraging a retry
+- **Automatic redirect guards** — `/dashboard` and `/chat` routes automatically redirect to the landing page if no active session exists, preventing dead-end screens
 - **Keyboard shortcuts** — Enter to send chat messages, Escape to clear file selection
 - **Suggested questions** — AI generates contextual follow-up questions based on the analysis, displayed as clickable chips in the chat interface
+- **Full mobile responsiveness** — all 4 pages tested from 320px (iPhone SE) to 1920px (desktop). Responsive grids use `minmax(min(X, 100%), 1fr)` to prevent overflow on narrow screens. Document cards scale down. Dashboard action buttons show abbreviated text on mobile. Chat source modal renders as a bottom sheet on phones
+- **Premium UI polish** — glassmorphism navigation bar with `backdrop-filter: blur(16px) saturate(180%)`, radial gradient glow behind hero headline, "How it works" cards with lift-on-hover + step number watermarks + blue icon containers, PrimaryButton hover glow expansion + translateY lift, global `button:active` scale micro-interaction, smoother cubic-bezier page transitions
+- **Professional PDF export** — redesigned report with premium cover page (larger title, red accent divider, confidentiality notice), blue left-border executive summary card, numbered action steps with blue pill badges, professional footer with disclaimer
 
 ---
 
