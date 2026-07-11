@@ -18,7 +18,7 @@ export function MarkdownText({ text, style, className }: MarkdownTextProps) {
   // Split into paragraphs/lines
   const lines = clean.split('\n');
 
-  const renderInline = (line: string, key: number) => {
+  const renderInline = (line: string, _key: number) => {
     // Parse **bold** and *italic* inline
     const parts: React.ReactNode[] = [];
     const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;

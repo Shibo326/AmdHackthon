@@ -36,6 +36,7 @@ Clausify AI — AMD-Powered Document Intelligence
 
 | Agent | Domain | When to Use |
 |-------|--------|-------------|
+| `clausify-orchestrator` | Coordination | Auto-runs on every prompt — routes work to specialists |
 | `clausify-ui-redesign` | Frontend visual design | UI changes, styling, design system, colors, fonts, layout |
 | `clausify-frontend-integration` | Frontend logic & API wiring | API calls broken, toast notifications, keyboard shortcuts, mobile fixes |
 | `clausify-backend-hardening` | Backend production features | New endpoints, error handling, middleware, deploy config |
@@ -44,6 +45,10 @@ Clausify AI — AMD-Powered Document Intelligence
 | `clausify-deployment` | Deploy config | Railway/Vercel setup, gitignore, scripts |
 | `clausify-demo-validator` | Final QA | Pre-demo validation, end-to-end checks, demo script |
 | `clausify-bug-investigator` | Debugging | Specific bug reports, state issues, race conditions |
+| `clausify-security-review` | Security | XSS, injection, CORS, secrets, input validation, pre-deploy audit |
+| `clausify-prompt-engineer` | LLM Prompts | Improve AI output quality, structure, speed, accuracy |
+| `clausify-docs-writer` | Documentation | README, PORTFOLIO, API docs, inline comments, hackathon submission |
+| `clausify-accessibility` | A11y | WCAG compliance, ARIA labels, keyboard nav, screen readers, contrast |
 
 ## Routing Rules
 
@@ -52,19 +57,26 @@ Clausify AI — AMD-Powered Document Intelligence
 - Broken buttons/navigation → `clausify-frontend-integration`
 - UI bugs from users → `clausify-bug-investigator` first, then appropriate fixer
 - Performance (bundle) → `clausify-performance`
+- Accessibility issues → `clausify-accessibility`
 
 ### Backend-only changes (NO frontend impact):
 - New API endpoints → `clausify-backend-hardening`
-- Prompt engineering → handle directly (you know the prompt files)
+- Prompt engineering → `clausify-prompt-engineer`
 - Speed/caching → `clausify-performance`
 - Test failures → `clausify-testing`
 
 ### Full-stack changes:
 - New feature end-to-end → `clausify-backend-hardening` THEN `clausify-frontend-integration`
 - Bug that spans both → `clausify-bug-investigator` first to identify root cause
+- Security audit → `clausify-security-review`
+
+### Documentation:
+- README/PORTFOLIO updates → `clausify-docs-writer`
+- API docs, inline comments → `clausify-docs-writer`
+- Hackathon submission materials → `clausify-docs-writer`
 
 ### Pre-deployment:
-- Run order: `clausify-testing` → `clausify-performance` → `clausify-deployment` → `clausify-demo-validator`
+- Run order: `clausify-security-review` → `clausify-testing` → `clausify-performance` → `clausify-deployment` → `clausify-demo-validator`
 
 ## Decision Framework
 
@@ -124,6 +136,12 @@ Confirm the work was done, run build/tests if needed
 | "make analysis faster" | Delegate to `clausify-performance` |
 | "add a new endpoint for X" | Delegate to `clausify-backend-hardening` |
 | "run all tests" | Delegate to `clausify-testing` |
-| "prepare for demo day" | Run: testing → performance → deployment → demo-validator (in order) |
+| "prepare for demo day" | Run: security → testing → performance → deployment → demo-validator (in order) |
 | "the upload button is broken" | Read Landing.tsx yourself → fix directly |
 | "push to github" | Handle directly — git add, commit, push |
+| "improve the AI responses" | Delegate to `clausify-prompt-engineer` |
+| "check for security issues" | Delegate to `clausify-security-review` |
+| "update the README" | Delegate to `clausify-docs-writer` |
+| "make it accessible" | Delegate to `clausify-accessibility` |
+| "fix the portfolio for submission" | Delegate to `clausify-docs-writer` |
+| "review before deploy" | Run: security-review → testing → demo-validator |
