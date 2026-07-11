@@ -307,9 +307,11 @@ export default function Dashboard() {
               {/* Export Dropdown */}
               <div className="relative" ref={exportDropdownRef}>
                 <GhostButton small onClick={() => setExportDropdownOpen(!exportDropdownOpen)} disabled={isExporting}>
-                  <FileDown size={14} className="sm:mr-1.5" />
-                  <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export"}</span>
-                  <ChevronDown size={12} className="ml-1" style={{ transform: exportDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                  <span className="flex items-center gap-1.5">
+                    <FileDown size={14} />
+                    <span className="hidden sm:inline">{isExporting ? "Exporting..." : "Export"}</span>
+                    <ChevronDown size={12} style={{ transform: exportDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                  </span>
                 </GhostButton>
                 {exportDropdownOpen && (
                   <div

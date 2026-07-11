@@ -36,15 +36,17 @@ export function NavigationBar({ showDemo = true }: NavigationBarProps) {
       <nav
         className="w-full flex items-center justify-between safe-top"
         style={{
-          background: "rgba(12, 14, 20, 0.96)",
-          backdropFilter: "blur(12px)",
+          background: "rgba(8, 13, 26, 0.72)",
+          backdropFilter: "blur(16px) saturate(180%)",
+          WebkitBackdropFilter: "blur(16px) saturate(180%)",
           height: "60px",
           paddingLeft: "clamp(16px, 4vw, 40px)",
           paddingRight: "clamp(16px, 4vw, 40px)",
-          borderBottom: "1px solid var(--rule)",
+          borderBottom: "1px solid rgba(59, 123, 246, 0.08)",
           position: "sticky",
           top: 0,
           zIndex: 50,
+          boxShadow: "0 4px 30px rgba(0, 0, 0, 0.15)",
         }}
       >
         {/* Logo */}

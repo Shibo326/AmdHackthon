@@ -11,6 +11,10 @@ export function PrimaryButton({ children, small = false, disabled, ...props }: P
       className="transition-all"
       disabled={disabled}
       style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
         background: disabled ? 'var(--graphite)' : 'var(--volt)',
         color: disabled ? 'var(--ghost)' : '#F0F4FF',
         borderRadius: 'var(--radius-btn)',
@@ -24,19 +28,21 @@ export function PrimaryButton({ children, small = false, disabled, ...props }: P
         boxShadow: disabled ? 'none' : '0 0 20px var(--volt-glow)',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
-        transition: 'background 0.15s, box-shadow 0.15s, opacity 0.15s',
+        transition: 'background 0.15s, box-shadow 0.2s, opacity 0.15s, transform 0.15s',
         whiteSpace: 'nowrap',
       }}
       onMouseOver={(e) => {
         if (!disabled) {
           e.currentTarget.style.background = 'var(--volt-hover)';
-          e.currentTarget.style.boxShadow = '0 0 28px var(--volt-glow)';
+          e.currentTarget.style.boxShadow = '0 0 32px rgba(59,123,246,0.5), 0 0 80px rgba(59,123,246,0.15)';
+          e.currentTarget.style.transform = 'translateY(-1px)';
         }
       }}
       onMouseOut={(e) => {
         if (!disabled) {
           e.currentTarget.style.background = 'var(--volt)';
           e.currentTarget.style.boxShadow = '0 0 20px var(--volt-glow)';
+          e.currentTarget.style.transform = 'translateY(0)';
         }
       }}
       {...props}
@@ -57,6 +63,10 @@ export function GhostButton({ children, small = false, disabled, ...props }: Gho
       className="border transition-all"
       disabled={disabled}
       style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
         background: 'transparent',
         borderRadius: 'var(--radius-btn)',
         borderColor: 'var(--rule)',

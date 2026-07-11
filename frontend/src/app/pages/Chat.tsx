@@ -447,9 +447,9 @@ export default function Chat() {
               {/* Download dropdown */}
               <div className="relative" ref={downloadRef}>
                 <GhostButton small onClick={() => setDownloadOpen(!downloadOpen)} disabled={isExporting}>
-                  <Download size={14} className="mr-1.5" />
+                  <Download size={14} />
                   <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Download"}</span>
-                  <ChevronDown size={12} className="ml-1" style={{ transform: downloadOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+                  <ChevronDown size={12} style={{ transform: downloadOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
                 </GhostButton>
                 {downloadOpen && (
                   <div
@@ -546,7 +546,7 @@ export default function Chat() {
 
               {/* New Session button */}
               <GhostButton small onClick={() => { void handleNewSession(); }} title="Clear session and upload new documents">
-                <RotateCcw size={14} className="mr-1.5" />
+                <RotateCcw size={14} />
                 <span className="hidden sm:inline">New Session</span>
               </GhostButton>
             </div>

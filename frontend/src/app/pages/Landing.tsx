@@ -343,8 +343,25 @@ export default function Landing() {
             lineHeight: 1.14,
             color: "var(--paper)",
             maxWidth: "min(720px, 92vw)",
+            position: "relative",
           }}
         >
+          {/* Glow behind headline */}
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "80%",
+              height: "120%",
+              background: "radial-gradient(ellipse at center, rgba(59,123,246,0.12) 0%, transparent 70%)",
+              pointerEvents: "none",
+              filter: "blur(40px)",
+              zIndex: -1,
+            }}
+          />
           Every contract tells a story. We read them all{" "}
           <span
             style={{
@@ -751,23 +768,59 @@ export default function Landing() {
                 <div className="hidden md:block self-center" style={{ flex: "0 0 24px", height: "1px", background: "var(--rule)" }} />
               )}
               <div
-                className="flex-1 p-6"
+                className="flex-1 p-6 group"
                 style={{
                   background: "var(--lead)",
                   border: "1px solid var(--rule)",
                   borderRadius: "var(--radius-card)",
-                  transition: "border-color 0.2s, transform 0.15s",
+                  transition: "border-color 0.25s, transform 0.2s, box-shadow 0.25s",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
                 onMouseOver={(e) => {
                   e.currentTarget.style.borderColor = "var(--volt-border)";
-                  e.currentTarget.style.transform = "scale(1.02)";
+                  e.currentTarget.style.transform = "translateY(-4px)";
+                  e.currentTarget.style.boxShadow = "0 12px 40px rgba(59,123,246,0.12)";
                 }}
                 onMouseOut={(e) => {
                   e.currentTarget.style.borderColor = "var(--rule)";
-                  e.currentTarget.style.transform = "scale(1)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "none";
                 }}
               >
-                <Icon size={26} style={{ color: "var(--volt)", marginBottom: "14px" }} />
+                {/* Step number watermark */}
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "16px",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: "48px",
+                    fontWeight: 700,
+                    color: "rgba(59,123,246,0.06)",
+                    lineHeight: 1,
+                    pointerEvents: "none",
+                  }}
+                >
+                  {num}
+                </span>
+                <div
+                  style={{
+                    width: "44px",
+                    height: "44px",
+                    borderRadius: "10px",
+                    background: "var(--volt-dim)",
+                    border: "1px solid var(--volt-border)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: "16px",
+                    transition: "background 0.2s, transform 0.2s",
+                  }}
+                >
+                  <Icon size={22} style={{ color: "var(--volt)" }} />
+                </div>
                 <h3 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "18px", fontWeight: 600, color: "var(--paper)", marginBottom: "8px" }}>{title}</h3>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", fontWeight: 400, lineHeight: 1.6, color: "var(--ash)" }}>{desc}</p>
               </div>
