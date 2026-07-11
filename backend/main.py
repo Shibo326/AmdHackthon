@@ -3,12 +3,14 @@ Clausify AI Backend — FastAPI Application
 AMD MI300X-powered document intelligence service.
 """
 
+import asyncio
 import logging
 import os
 import sys
 import uuid
 from datetime import datetime, timezone
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -122,8 +124,9 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 # ---- Health Check ----
 @app.get("/health", tags=["health"])
+@app.head("/health", tags=["health"])
 async def health_check():
-    """Health check endpoint with provider and timestamp info."""
+    """Health check endpoint with provider and timestamp info. Supports GET and HEAD."""
     return {
         "status": "healthy",
         "service": "clausify-api",
@@ -146,14 +149,47 @@ async def provider_info():
     }
 
 
+# ---- Self-Ping Keep-Alive ----
+SELF_PING_INTERVAL = int(os.getenv("SELF_PING_INTERVAL", "120"))  # seconds (default 2 min)
+_keep_alive_task: asyncio.Task | None = None
+
+
+async def _self_ping_loop():
+    """Background loop that pings our own /health endpoint to prevent Railway cold sleep."""
+    # Determine the public URL (Railway sets RAILWAY_PUBLIC_DOMAIN or PORT)
+    public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+    port = int(os.getenv("PORT", "8000"))
+
+    if public_domain:
+        url = f"https://{public_domain}/health"
+    else:
+        # Local dev — ping localhost
+        url = f"http://127.0.0.1:{port}/health"
+
+    logger.info(f"Keep-alive self-ping started → {url} every {SELF_PING_INTERVAL}s")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        while True:
+            await asyncio.sleep(SELF_PING_INTERVAL)
+            try:
+                resp = await client.get(url)
+                logger.debug(f"Self-ping: {resp.status_code}")
+            except Exception as e:
+                logger.warning(f"Self-ping failed (non-fatal): {e}")
+
+
 # ---- Startup Event ----
 @app.on_event("startup")
 async def startup_event():
     """
     Initialize all services at startup and inject into router modules.
     """
+    global _keep_alive_task
     logger.info("Clausify AI Backend starting up...")
     logger.info("AMD MI300X-powered document intelligence")
+
+    # Start keep-alive background task
+    _keep_alive_task = asyncio.create_task(_self_ping_loop())
 
     try:
         from services.document_parser import DocumentParser
@@ -233,8 +269,15 @@ async def startup_event():
 # ---- Shutdown Event ----
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Close persistent HTTP connections on graceful shutdown."""
+    """Close persistent HTTP connections and cancel background tasks on graceful shutdown."""
+    global _keep_alive_task
     logger.info("Clausify AI Backend shutting down...")
+
+    # Cancel keep-alive task
+    if _keep_alive_task and not _keep_alive_task.done():
+        _keep_alive_task.cancel()
+        logger.info("Keep-alive task cancelled")
+
     if hasattr(app.state, "llm_service"):
         try:
             await app.state.llm_service.aclose()

@@ -2,14 +2,23 @@ name: Keep Railway Alive
 
 on:
   schedule:
-    # Ping every 5 minutes to prevent Railway cold starts
-    - cron: '*/5 * * * *'
+    # Ping every 4 minutes — GitHub cron can be delayed so this is a safety net
+    - cron: '*/4 * * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping backend health
+      - name: Ping backend health (with retry)
         run: |
-          curl -sf https://amdhackthon-production.up.railway.app/health || echo "Backend ping failed (non-fatal)"
+          for i in 1 2 3; do
+            if curl -sf --max-time 30 https://amdhackthon-production.up.railway.app/health; then
+              echo ""
+              echo "✅ Backend is awake (attempt $i)"
+              exit 0
+            fi
+            echo "⏳ Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          echo "⚠️ Backend did not respond after 3 attempts (non-fatal)"
