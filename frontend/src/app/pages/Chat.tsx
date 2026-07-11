@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavigationBar } from "../components/NavigationBar";
-import { GhostButton, PrimaryButton } from "../components/Buttons";
+import { GhostButton } from "../components/Buttons";
 import { EvidenceTag, EvidenceBox } from "../components/Badges";
 import {
   Send,
@@ -105,24 +105,15 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  // Redirect to landing if no session
+  useEffect(() => {
+    if (!sessionId) {
+      navigate("/", { replace: true });
+    }
+  }, [sessionId, navigate]);
+
   if (!sessionId) {
-    return (
-      <div className="min-h-screen" style={{ background: "var(--ink)" }}>
-        <NavigationBar showDemo={false} />
-        <div className="flex flex-col items-center pt-24 gap-6 px-4 animate-fadeIn">
-          <div className="px-6 py-6 rounded-xl text-center w-full" style={{ background: "var(--lead)", border: "1px solid var(--rule)", maxWidth: "480px" }}>
-            <FileText size={40} style={{ color: "var(--ghost)", margin: "0 auto 16px" }} />
-            <h2 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "20px", fontWeight: 700, color: "var(--paper)", marginBottom: "8px" }}>
-              No active session
-            </h2>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--ash)", marginBottom: "20px" }}>
-              Please upload documents first to start asking questions.
-            </p>
-            <Link to="/"><PrimaryButton>Upload Documents</PrimaryButton></Link>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const handleSubmit = async (question: string) => {

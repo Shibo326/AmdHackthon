@@ -110,24 +110,15 @@ export default function Dashboard() {
     }
   };
 
+  // Redirect to landing if no analysis
+  useEffect(() => {
+    if (!analysis) {
+      navigate("/", { replace: true });
+    }
+  }, [analysis, navigate]);
+
   if (!analysis) {
-    return (
-      <div className="min-h-screen" style={{ background: "var(--ink)" }}>
-        <NavigationBar showDemo={false} />
-        <div className="flex flex-col items-center pt-24 gap-6 px-4 animate-fadeIn">
-          <div className="px-6 py-6 rounded-xl text-center w-full" style={{ background: "var(--lead)", border: "1px solid var(--rule)", maxWidth: "480px" }}>
-            <FileText size={40} style={{ color: "var(--ghost)", margin: "0 auto 16px" }} />
-            <h2 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "20px", fontWeight: 700, color: "var(--paper)", marginBottom: "8px" }}>
-              No analysis available
-            </h2>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--ash)", marginBottom: "20px" }}>
-              Please upload documents first to generate an analysis.
-            </p>
-            <Link to="/"><PrimaryButton>Upload Documents</PrimaryButton></Link>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const matrixColumns: string[] =
