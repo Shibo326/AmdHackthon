@@ -455,7 +455,7 @@ export default function Landing() {
               </h3>
 
               <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: "var(--ghost)", marginBottom: "14px", textAlign: "center" }}>
-                PDF · PNG · JPG · JPEG — up to 10 files
+                PDF · PNG · JPG · JPEG — 2-5 recommended · 10 max
               </p>
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--volt)", textDecoration: "underline" }}>
                 or browse files
