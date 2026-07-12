@@ -479,9 +479,38 @@ export default function Demo() {
           </div>
 
           <div className="p-4 sm:p-6 md:p-8 space-y-5">
+            {/* Guided Tour Intro */}
+            <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(59,123,246,0.06) 0%, rgba(0,212,255,0.04) 100%)", border: "1px solid var(--volt-border)" }}>
+              <div className="flex items-start gap-3">
+                <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "var(--volt-dim)", border: "1px solid var(--volt-border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Lightbulb size={18} style={{ color: "var(--volt)" }} />
+                </div>
+                <div>
+                  <h3 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "16px", fontWeight: 700, color: "var(--paper)", marginBottom: "6px" }}>
+                    What you're seeing
+                  </h3>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "14px", lineHeight: 1.6, color: "var(--ash)", margin: 0 }}>
+                    This demo shows a complete AI analysis of {documents.length} sample procurement documents — processed in under 90 seconds using AMD Instinct MI300X. 
+                    Below you'll see: <strong style={{ color: "var(--paper)" }}>cross-document conflict detection</strong>, an <strong style={{ color: "var(--paper)" }}>executive summary</strong>, <strong style={{ color: "var(--paper)" }}>risk assessment</strong> with severity ratings, 
+                    a <strong style={{ color: "var(--paper)" }}>side-by-side comparison matrix</strong>, and an <strong style={{ color: "var(--paper)" }}>AI recommendation</strong> with actionable next steps. 
+                    Scroll down to see the AI chat copilot in action.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Conflict Alert */}
             {hasConflicts && primaryConflict && (
-              <div className="rounded-lg p-4 animate-slideDown" style={{ background: "rgba(237,28,36,0.06)", border: "1px solid rgba(237,28,36,0.25)", borderLeft: "4px solid var(--amd-signal)" }}>
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ghost)", background: "var(--graphite)", padding: "3px 8px", borderRadius: "4px" }}>
+                    FEATURE 1
+                  </span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ash)" }}>
+                    Cross-Document Conflict Detection — automatically finds contradictions between documents
+                  </span>
+                </div>
+                <div className="rounded-lg p-4 animate-slideDown" style={{ background: "rgba(237,28,36,0.06)", border: "1px solid rgba(237,28,36,0.25)", borderLeft: "4px solid var(--amd-signal)" }}>
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
                   <AlertTriangle size={20} style={{ color: "var(--amd-signal)", flexShrink: 0 }} />
                   <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "16px", fontWeight: 700, color: "var(--amd-signal)" }}>Conflict Detected</span>
@@ -510,9 +539,19 @@ export default function Demo() {
                   </div>
                 </div>
               </div>
+              </div>
             )}
 
             {/* Analysis Cards */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ghost)", background: "var(--graphite)", padding: "3px 8px", borderRadius: "4px" }}>
+                  FEATURE 2-5
+                </span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ash)" }}>
+                  AI-Generated Analysis — executive summary, risk scoring, document comparison, and recommendation
+                </span>
+              </div>
             <div className="grid gap-4 sm:gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
               {/* Executive Summary */}
               <Card>
@@ -599,8 +638,18 @@ export default function Demo() {
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "15px", lineHeight: 1.6, color: "var(--ash)" }}>{analysis.recommendation.summary}</p>
               </Card>
             </div>
+            </div>
 
             {/* Chat Preview + CTA */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ghost)", background: "var(--graphite)", padding: "3px 8px", borderRadius: "4px" }}>
+                  FEATURE 6
+                </span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "12px", color: "var(--ash)" }}>
+                  AI Chat Copilot — ask follow-up questions in plain language, get answers grounded in your documents
+                </span>
+              </div>
             <div className="rounded-xl p-5 sm:p-6" style={{ background: "var(--lead)", border: "1px solid var(--rule)" }}>
               <div className="flex items-center gap-3 mb-5">
                 <div style={{ width: "40px", height: "40px", flexShrink: 0, borderRadius: "10px", background: "var(--graphite)", border: "1px solid rgba(59,123,246,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -684,6 +733,7 @@ export default function Demo() {
                   </Link>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
