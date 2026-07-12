@@ -363,8 +363,9 @@ Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
         user_prompt = build_risk_prompt(chunks)
         # Increased to 3000 tokens — deepseek-v4-flash is more verbose than gpt-oss-120b
         # and needs extra headroom to output 5-8 detailed risk items without truncation.
+        # Temperature 0.0 for maximum consistency in risk identification.
         raw = await self.llm_service.complete(
-            system_prompt, user_prompt, max_tokens=3000, fast=False
+            system_prompt, user_prompt, max_tokens=3000, temperature=0.0, fast=False
         )
         logger.info(f"[risks] raw LLM response: {len(raw)} chars, first 500: {raw[:500]!r}")
         raw = _strip_json_fences(raw)
@@ -445,6 +446,48 @@ Return ONLY valid JSON (no preamble, no explanation, just the JSON object):
 
         risks_data = data.get("risks", []) if isinstance(data, dict) else []
         logger.info(f"[risks] parsed {len(risks_data)} risk items")
+
+        # CONSISTENCY FIX: If the LLM returned valid JSON but zero risks,
+        # and we have multi-document chunks (which almost always have discrepancies),
+        # retry once with an even more explicit prompt.
+        if not risks_data and len(set(c.source_document for c in chunks)) >= 2:
+            logger.warning("[risks] Zero risks returned for multi-doc session — retrying with assertive prompt")
+            retry_prompt = (
+                user_prompt
+                + "\n\nIMPORTANT: You returned zero risks, but these documents contain pricing discrepancies, "
+                "conflicting terms, and/or financial exposure. This is INCORRECT. You MUST identify at least 3-5 risks. "
+                "Look for: (1) price/amount differences between documents, (2) conflicting payment terms, "
+                "(3) missing protections or one-sided clauses, (4) any term that could harm the buyer financially. "
+                "Return the JSON with at least 3 risks. Start with {"
+            )
+            try:
+                raw_retry = await self.llm_service.complete(
+                    system_prompt, retry_prompt, max_tokens=3000, temperature=0.0, fast=False
+                )
+                raw_retry = _strip_json_fences(raw_retry)
+                brace_s = raw_retry.find("{")
+                brace_e = raw_retry.rfind("}")
+                if brace_s != -1 and brace_e > brace_s:
+                    raw_retry = raw_retry[brace_s:brace_e + 1]
+                try:
+                    retry_data = json.loads(raw_retry)
+                    retry_risks = retry_data.get("risks", [])
+                    if retry_risks:
+                        risks_data = retry_risks
+                        logger.info(f"[risks] Retry succeeded — got {len(risks_data)} risks")
+                except json.JSONDecodeError:
+                    cleaned_retry = _re.sub(r",\s*([}\]])", r"\1", raw_retry)
+                    try:
+                        retry_data = json.loads(cleaned_retry)
+                        retry_risks = retry_data.get("risks", [])
+                        if retry_risks:
+                            risks_data = retry_risks
+                            logger.info(f"[risks] Retry (cleaned) succeeded — got {len(risks_data)} risks")
+                    except json.JSONDecodeError:
+                        logger.warning("[risks] Retry also failed to parse")
+            except Exception as retry_err:
+                logger.warning(f"[risks] Retry LLM call failed: {retry_err}")
+
         risks = []
         for item in risks_data:
             try:
@@ -483,10 +526,10 @@ DOCUMENT CONTEXT:
 
 {COMPARISON_MATRIX_PROMPT}"""
 
-        # FAST model — structured output task; increased to 1500 tokens for deepseek-v4-flash
-        # verbosity. 500 was too low and caused truncated/empty matrix responses.
+        # QUALITY model — comparison requires reasoning about relative merits
+        # Temperature 0.0 for consistency
         raw = await self.llm_service.complete(
-            system_prompt, user_prompt, max_tokens=1500, fast=True
+            system_prompt, user_prompt, max_tokens=1500, temperature=0.0, fast=False
         )
         logger.info(f"[matrix] raw LLM response: {len(raw)} chars, first 300: {raw[:300]!r}")
         raw = _strip_json_fences(raw)

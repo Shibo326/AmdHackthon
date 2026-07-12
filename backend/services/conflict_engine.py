@@ -57,17 +57,43 @@ class ConflictEngine:
             f"Running consolidated conflict detection across {len(document_names)} documents (1 LLM call, fast model)"
         )
 
-        # Conflict detection uses FAST model (gpt-oss-120b):
-        # - structured extraction task — no deep reasoning required
-        # - 1500 tokens: enough for up to 6 well-formed conflicts
+        # Conflict detection uses QUALITY model (deepseek-v4-flash):
+        # - requires reasoning to compare documents and identify contradictions
+        # - 2000 tokens: enough for up to 6 well-formed conflicts with detailed explanations
+        # - Temperature 0.0 for maximum consistency
         try:
             raw = await self.llm_service.complete(
-                system_prompt, prompt, max_tokens=1500, fast=True
+                system_prompt, prompt, max_tokens=2000, temperature=0.0, fast=False
             )
             logger.info(f"[conflicts] raw LLM response: {len(raw)} chars, first 300: {raw[:300]!r}")
             raw = _strip_json_fences(raw)
             logger.info(f"[conflicts] after strip, first 200: {raw[:200]!r}")
             conflicts = self._parse_conflicts(raw)
+
+            # CONSISTENCY FIX: If 0 conflicts found for multi-doc session, retry once
+            # Documents with different terms/prices almost always have conflicts
+            if not conflicts and len(document_names) >= 2:
+                logger.warning("[conflicts] Zero conflicts returned for multi-doc session — retrying with stricter prompt")
+                retry_prompt = (
+                    prompt
+                    + "\n\nIMPORTANT: You returned zero conflicts, but these are separate documents about the SAME transaction/relationship. "
+                    "Look again for: (1) price differences between documents, (2) different payment terms, "
+                    "(3) quantities or specifications that don't match, (4) any clause in one document that contradicts another. "
+                    "If one document says Net 60 and another says Net 30, that IS a conflict. "
+                    "If amounts don't match, that IS a conflict. Return at least the most obvious conflicts."
+                )
+                try:
+                    raw2 = await self.llm_service.complete(
+                        system_prompt, retry_prompt, max_tokens=2000, temperature=0.0, fast=False
+                    )
+                    raw2 = _strip_json_fences(raw2)
+                    conflicts2 = self._parse_conflicts(raw2)
+                    if conflicts2:
+                        conflicts = conflicts2
+                        logger.info(f"[conflicts] Retry succeeded — got {len(conflicts)} conflicts")
+                except Exception as retry_err:
+                    logger.warning(f"[conflicts] Retry failed: {retry_err}")
+
             logger.info(
                 f"Found {len(conflicts)} conflict(s) across {len(document_names)} documents"
             )

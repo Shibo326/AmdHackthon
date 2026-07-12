@@ -5,28 +5,41 @@ from models.document import Chunk
 def build_risk_prompt(chunks: list[Chunk]) -> str:
     context = _format_chunks_for_risk(chunks)
 
-    return f"""You are a senior risk analyst. Analyze the documents below and identify ALL material risks.
+    return f"""You are a senior risk analyst specializing in contract and procurement risk. Analyze the documents below and identify ALL material risks.
+
+CRITICAL INSTRUCTION: For business documents (contracts, POs, invoices, agreements), there are ALWAYS risks to identify. If you find pricing discrepancies, unfavorable terms, missing protections, or conflicting clauses, you MUST report them. Returning zero risks for business documents with discrepancies is INCORRECT.
 
 DOCUMENTS:
 {context}
 
-For each risk identify: financial exposure, legal liability, compliance gaps, operational issues, strategic concerns.
+RISK IDENTIFICATION CHECKLIST — check every one:
+1. FINANCIAL RISKS: Price discrepancies, hidden fees, unfavorable payment terms, cost escalators, missing volume discounts, billing errors
+2. LEGAL RISKS: One-sided clauses, missing indemnification, auto-renewal traps, jurisdiction issues, IP ownership gaps
+3. COMPLIANCE RISKS: Missing approvals, regulatory gaps, audit exposure, data handling issues
+4. OPERATIONAL RISKS: Delivery timeline conflicts, SLA gaps, resource dependency, vendor lock-in
+5. STRATEGIC RISKS: Precedent-setting terms, competitive exposure, relationship imbalance
 
-Return ONLY valid JSON (start your response with the opening brace, no preamble):
+Return ONLY valid JSON (start your response with the opening brace, no preamble, no thinking tags):
 {{
   "risks": [
     {{
       "id": "r1",
       "level": "HIGH",
-      "description": "<specific risk with document evidence, quantified impact, and what happens if ignored>",
+      "description": "<specific risk with document evidence, quantified impact where possible, and what happens if ignored>",
       "sourceDocument": "<exact filename>",
       "category": "<Financial | Legal | Compliance | Operational | Strategic | Procurement>"
     }}
   ]
 }}
 
-Severity: HIGH=material financial/legal exposure requiring immediate action. MEDIUM=significant gap needing resolution within 30 days. LOW=minor issue for regular review.
-Include all material risks. Return ONLY the JSON object, starting with {{."""
+Severity guide:
+- HIGH: Material financial/legal exposure requiring immediate action (>$1K impact or legal liability)
+- MEDIUM: Significant gap needing resolution within 30 days
+- LOW: Minor issue for regular review
+
+You MUST identify at least 3 risks for any business document set with financial terms. If documents have pricing discrepancies or conflicting terms, those are automatically HIGH or CRITICAL risks.
+
+Return ONLY the JSON object starting with {{. No explanation, no markdown, no thinking."""
 
 
 # Regex patterns that signal risk-relevant content
@@ -59,19 +72,20 @@ def _format_chunks_for_risk(chunks: list[Chunk], max_chunks_per_doc: int = 8) ->
     num_docs = len(doc_chunks)
 
     # Dynamic allocation: more docs = fewer chunks per doc, shorter per chunk
+    # Increased limits to ensure the LLM has enough context to identify risks
     if num_docs == 1:
-        max_per_doc = 8
-        max_chars = 1000
+        max_per_doc = 10
+        max_chars = 1200
     elif num_docs == 2:
+        max_per_doc = 7
+        max_chars = 1000
+    elif num_docs == 3:
         max_per_doc = 5
         max_chars = 900
-    elif num_docs == 3:
-        max_per_doc = 4
-        max_chars = 800
     else:
         # 4+ docs: tighter budget but always prioritize high-risk-signal chunks
-        max_per_doc = max(2, 8 // num_docs)
-        max_chars = 700
+        max_per_doc = max(3, 10 // num_docs)
+        max_chars = 800
 
     sections = []
     for doc_name, doc_chunk_list in doc_chunks.items():
