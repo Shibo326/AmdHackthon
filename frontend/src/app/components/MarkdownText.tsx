@@ -7,13 +7,48 @@ interface MarkdownTextProps {
 }
 
 /**
+ * Try to extract the "answer" field if text appears to be raw JSON.
+ * This is a frontend safety net for when the backend fails to parse LLM output properly.
+ */
+function extractAnswerFromJSON(text: string): string {
+  const trimmed = text.trim();
+  // Quick check: does it look like raw JSON with an "answer" key?
+  if (!trimmed.startsWith("{") || !trimmed.includes('"answer"')) return text;
+
+  // Try regex extraction of the answer field value
+  const match = trimmed.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (match && match[1] && match[1].length > 20) {
+    // Unescape JSON string escapes
+    return match[1]
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+  }
+
+  // If the whole text is raw JSON-like, try JSON.parse as a last resort
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && typeof parsed.answer === 'string') {
+      return parsed.answer;
+    }
+  } catch {
+    // Not valid JSON — fall through
+  }
+
+  return text;
+}
+
+/**
  * Renders LLM markdown text with bold, italic, bullet points, and line breaks.
  * No external dependencies — handles the subset that Kimi K2.6 / DeepSeek produce.
  */
 export function MarkdownText({ text, style, className }: MarkdownTextProps) {
   if (!text) return null;
 
-  const clean = sanitizeText(text);
+  // Safety net: if text looks like raw JSON, extract just the answer
+  const cleaned = extractAnswerFromJSON(text);
+  const clean = sanitizeText(cleaned);
 
   // Split into paragraphs/lines
   const lines = clean.split('\n');

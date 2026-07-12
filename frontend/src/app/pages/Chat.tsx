@@ -146,15 +146,56 @@ export default function Chat() {
         historyForAPI,
         (token) => {
           accumulated += token;
+          // If the stream starts with JSON structure, try to extract just the answer text
+          const trimmedAccum = accumulated.trim();
+          if (trimmedAccum.startsWith('{"answer"') || trimmedAccum.startsWith('{ "answer"')) {
+            // Show just the answer content portion while streaming
+            const answerStart = trimmedAccum.indexOf('"answer"');
+            if (answerStart >= 0) {
+              const colonPos = trimmedAccum.indexOf(':', answerStart + 8);
+              if (colonPos >= 0) {
+                const quoteStart = trimmedAccum.indexOf('"', colonPos + 1);
+                if (quoteStart >= 0) {
+                  // Extract from after the opening quote of the answer value
+                  let answerContent = trimmedAccum.slice(quoteStart + 1);
+                  // Remove trailing quote and everything after if present
+                  const endQuote = answerContent.search(/(?<!\\)"/);
+                  if (endQuote >= 0) {
+                    answerContent = answerContent.slice(0, endQuote);
+                  }
+                  // Unescape
+                  answerContent = answerContent.replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                  setStreamingAnswer(answerContent);
+                  return;
+                }
+              }
+            }
+          }
           setStreamingAnswer(accumulated);
         },
         (response) => {
           setIsStreaming(false);
           setStreamingAnswer("");
+          // Safety: clean the answer field if it contains raw JSON
+          const sr = response.structuredResponse;
+          if (sr.answer && sr.answer.trim().startsWith("{") && sr.answer.includes('"answer"')) {
+            try {
+              const parsed = JSON.parse(sr.answer.trim());
+              if (parsed && typeof parsed.answer === "string") {
+                sr.answer = parsed.answer;
+              }
+            } catch {
+              // Try regex extraction
+              const match = sr.answer.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+              if (match && match[1] && match[1].length > 20) {
+                sr.answer = match[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+              }
+            }
+          }
           const assistantMsg: AssistantMessage = {
             id: response.messageId,
             role: "assistant",
-            structuredResponse: response.structuredResponse,
+            structuredResponse: sr,
             timestamp: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);

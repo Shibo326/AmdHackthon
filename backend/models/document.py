@@ -33,3 +33,4 @@ class Chunk(BaseModel):
     source_document: str
     document_type: Literal["pdf", "image", "document"]
     chunk_index: int
+    distance: float | None = None  # Semantic distance from query (lower = more relevant)

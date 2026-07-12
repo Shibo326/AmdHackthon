@@ -1,7 +1,7 @@
 from models.document import Chunk
 
 
-def build_chat_prompt(question: str, chunks: list[Chunk], history: list | None = None) -> str:
+def build_chat_prompt(question: str, chunks: list[Chunk], history: list | None = None, low_relevance: bool = False) -> str:
     context = _format_chunks(chunks)
 
     # Build conversation history block (last 5 turns max for deeper context)
@@ -14,6 +14,23 @@ def build_chat_prompt(question: str, chunks: list[Chunk], history: list | None =
             history_lines.append(f"{role_label}: {msg.get('content', '')[:600]}")
         if history_lines:
             history_block = "\nPREVIOUS CONVERSATION (for context continuity — build on prior answers, don't repeat them):\n" + "\n".join(history_lines) + "\n"
+
+    # Add relevance warning when the question doesn't match document content
+    relevance_warning = ""
+    if low_relevance:
+        relevance_warning = """
+⚠️ RELEVANCE ALERT: The retrieved document passages below have LOW semantic similarity to the user's question. This likely means:
+- The question may not be answerable from the uploaded documents
+- The user may be asking about something unrelated to the documents
+- Or the documents simply don't cover this topic
+
+CRITICAL INSTRUCTION: If the question is NOT answerable from the document content below, you MUST:
+1. Clearly state that this topic is not covered in the uploaded documents
+2. Do NOT fabricate or hallucinate information that isn't in the documents
+3. If the question is completely off-topic (weather, sports, personal advice, coding help, etc.), politely redirect: "I'm Clausify AI — I specialize in analyzing your uploaded documents. This question isn't covered in your documents. I can help you with [2-3 relevant examples based on what IS in the documents]."
+4. If the question is business-related but not in the docs, you may offer brief general knowledge clearly labeled as "General industry knowledge (not from your documents):"
+
+"""
 
     return f"""You are Clausify AI — a world-class document analyst who thinks like a senior partner at a top consulting firm. You combine surgical document precision with the strategic insight of someone who has reviewed thousands of contracts, financial statements, and procurement deals.
 
@@ -28,7 +45,7 @@ LANGUAGE RULE (follow strictly):
   - User: "What are the payment terms?" → Reply in English
   - User: "Pwede mo ba i-explain yung conflict?" → Reply in Tagalog
   - User: "Magkano yung total na babayaran?" → Reply in Tagalog
-
+{relevance_warning}
 RETRIEVED DOCUMENT CONTENT:
 {context}
 {history_block}
@@ -65,7 +82,9 @@ RESPONSE RULES:
    - If the documents don't address something: "This isn't covered in the uploaded documents. Based on standard practice in this domain: [expert guidance]"
    - If something is ambiguous: "The language in clause X is vague enough to be interpreted either way — here's what that means for your position: [analysis]"
    - Never say "I don't know" without offering what you DO know that's relevant
-   - If the question is completely unrelated to documents or business analysis (e.g. weather, sports, cooking): politely redirect — "I'm specialized in document analysis. For your documents, I can help with [relevant examples]."
+   - If the question is completely unrelated to documents or business analysis (e.g. weather, sports, cooking, personal advice, coding, general trivia): politely redirect — "I'm Clausify AI, specialized in document analysis. This question isn't covered in your uploaded documents. For your documents, I can help with [2-3 specific relevant examples based on what's actually in the documents]."
+   - NEVER fabricate information. If a specific figure, clause, or fact is NOT in the documents, do NOT invent one. Say it's not documented.
+   - When giving expert knowledge beyond the documents, ALWAYS prefix with "Industry standard:" or "General practice:" to distinguish from document-sourced facts.
 
 5. SOURCE TRANSPARENCY
    - "Per [filename]:" for document-grounded claims
@@ -77,7 +96,7 @@ OUTPUT FORMAT — Return ONLY valid JSON (no preamble, no explanation outside th
   "answer": "<Your expert analysis. Start with the key insight, not a summary. Cite specific evidence. Add expert context. Explain implications. Be the smartest person in the room. 4-6 sentences minimum. Do NOT include any JSON, curly braces, or code blocks inside this field — plain text only.>",
   "evidence": [
     {{
-      "quote": "<exact verbatim text from the document content above — max 200 chars. Only include quotes that genuinely appear in the retrieved content.>",
+      "quote": "<exact verbatim text from the document content above — max 200 chars. Only include quotes that genuinely appear in the retrieved content. If no relevant quote exists, return an EMPTY array []. NEVER fabricate quotes.>",
       "sourceDocument": "<exact filename as shown in the source headers above>",
       "documentType": "pdf"
     }}

@@ -89,7 +89,20 @@ async def chat(request: ChatRequest):
     system_prompt = get_system_prompt(doc_names)
     # Convert history models to plain dicts for the prompt builder
     history_dicts = [{"role": m.role, "content": m.content} for m in request.history]
-    user_prompt = build_chat_prompt(question, chunks, history=history_dicts)
+
+    # Check semantic relevance — if all retrieved chunks have high distance,
+    # the question is likely off-topic or not covered by the documents
+    low_relevance = False
+    if chunks:
+        distances = [c.distance for c in chunks if c.distance is not None]
+        if distances:
+            avg_distance = sum(distances) / len(distances)
+            # ChromaDB L2 distance: >1.5 means very low semantic similarity
+            if avg_distance > 1.5:
+                low_relevance = True
+                logger.info(f"[chat] Low relevance detected: avg_distance={avg_distance:.2f}")
+
+    user_prompt = build_chat_prompt(question, chunks, history=history_dicts, low_relevance=low_relevance)
 
     try:
         raw = await llm_service.complete(system_prompt, user_prompt, max_tokens=6144)
@@ -123,17 +136,56 @@ async def chat(request: ChatRequest):
             try:
                 data = json.loads(cleaned)
             except json.JSONDecodeError:
-                pass
+                # Try fixing missing opening quotes on values (e.g. "impact": Unknowing... → "impact": "Unknowing...)
+                # This handles LLM generating: "key": value without quotes around string values
+                repaired = re.sub(
+                    r'("(?:answer|evidence|risks|recommendation|quote|sourceDocument|documentType|risk|severity|impact|source|title|summary|nextSteps|confidence)")\s*:\s*(?!")([A-Z$\[][^\n,}]*)',
+                    r'\1: "\2"',
+                    cleaned,
+                )
+                try:
+                    data = json.loads(repaired)
+                    logger.info("[chat] JSON parse succeeded after missing-quote repair")
+                except json.JSONDecodeError:
+                    pass
 
         # If JSON parsing totally failed, return the raw text as the answer
         if data is None:
             logger.warning(f"[chat] JSON parse failed after all attempts. Raw first 500: {raw[:500]!r}")
-            structured_response = StructuredAIResponse(
-                answer=raw.strip(),
-                evidence=[],
-                risks="",
-                recommendation="",
-            )
+            # Last resort: try to regex-extract the answer field from the raw JSON-like text
+            answer_match = re.search(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', raw, re.DOTALL)
+            if answer_match:
+                extracted_answer = answer_match.group(1)
+                # Unescape JSON string escapes
+                extracted_answer = extracted_answer.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                logger.info(f"[chat] Regex-extracted answer from failed JSON: {len(extracted_answer)} chars")
+                structured_response = StructuredAIResponse(
+                    answer=extracted_answer,
+                    evidence=[],
+                    risks="",
+                    recommendation="",
+                )
+            else:
+                # If even the regex fails, strip any JSON wrapper characters and give the raw text
+                fallback_answer = raw.strip()
+                # Remove leading/trailing braces if the raw text looks like it's almost JSON
+                if fallback_answer.startswith("{"):
+                    fallback_answer = re.sub(r'^\{\s*', '', fallback_answer)
+                if fallback_answer.endswith("}"):
+                    fallback_answer = re.sub(r'\s*\}$', '', fallback_answer)
+                # Remove JSON key prefixes
+                fallback_answer = re.sub(r'^"answer"\s*:\s*"?', '', fallback_answer).strip()
+                # Remove trailing evidence/risks/recommendation blocks
+                fallback_answer = re.sub(r',?\s*"(evidence|risks|recommendation)":\s*[\[\{"][\s\S]*$', '', fallback_answer).strip()
+                # Strip trailing quote if leftover
+                if fallback_answer.endswith('"'):
+                    fallback_answer = fallback_answer[:-1].strip()
+                structured_response = StructuredAIResponse(
+                    answer=fallback_answer if fallback_answer else raw.strip(),
+                    evidence=[],
+                    risks="",
+                    recommendation="",
+                )
         else:
             answer = data.get("answer", "")
             logger.info(f"[chat] Parsed OK. answer={len(answer)} chars, evidence={len(data.get('evidence', []))}")
@@ -142,7 +194,7 @@ async def chat(request: ChatRequest):
             # it means the model put structured data into the answer field — extract it cleanly.
             if isinstance(answer, dict):
                 # Model returned answer as a dict object — flatten to string
-                answer = answer.get("text", answer.get("content", str(answer)))
+                answer = answer.get("text", answer.get("content", answer.get("answer", str(answer))))
             elif isinstance(answer, str):
                 stripped_ans = answer.strip()
                 # If answer looks like a raw JSON object/array, the model likely echoed the
@@ -150,27 +202,53 @@ async def chat(request: ChatRequest):
                 if stripped_ans.startswith("{") and stripped_ans.endswith("}"):
                     try:
                         inner = json.loads(stripped_ans)
-                        # It parsed as JSON — extract any nested text field
-                        answer = (
-                            inner.get("text")
-                            or inner.get("content")
-                            or inner.get("summary")
-                            or inner.get("answer")
-                            or stripped_ans  # keep as-is if no text field found
-                        )
+                        # Check if it's actually a full response object (has evidence/risks/recommendation)
+                        # If so, extract the nested answer and also merge evidence if the outer data is empty.
+                        if "answer" in inner and ("evidence" in inner or "risks" in inner):
+                            nested_answer = inner.get("answer", "")
+                            if isinstance(nested_answer, str) and len(nested_answer) > 10:
+                                answer = nested_answer
+                                # If outer response has no evidence, pull from nested
+                                if not data.get("evidence") and inner.get("evidence"):
+                                    data["evidence"] = inner["evidence"]
+                                if not data.get("risks") and inner.get("risks"):
+                                    data["risks"] = inner["risks"]
+                                if not data.get("recommendation") and inner.get("recommendation"):
+                                    data["recommendation"] = inner["recommendation"]
+                            else:
+                                answer = str(nested_answer) if nested_answer else stripped_ans
+                        else:
+                            # It's a JSON object but not a full response — extract text content
+                            answer = (
+                                inner.get("text")
+                                or inner.get("content")
+                                or inner.get("summary")
+                                or inner.get("answer")
+                                or stripped_ans  # keep as-is if no text field found
+                            )
                         if not isinstance(answer, str):
                             answer = str(answer)
                     except json.JSONDecodeError:
                         pass  # Not actually JSON — keep as-is
 
+            # Strip JSON key prefixes that the LLM sometimes leaves in the answer text
+            # e.g. the answer starts with "*answer*: " or '"answer": "'
+            import re as _re
+            answer = _re.sub(r'^[\s"]*\*?answer\*?\s*[:=]\s*["\']?', '', answer, flags=re.IGNORECASE).strip()
+            # Strip trailing quote if the above left one dangling
+            if answer.endswith('"') and not answer.startswith('"'):
+                answer = answer[:-1].strip()
+
             # Only strip truly dangling trailing JSON blobs (e.g. model appended evidence array to text).
             # Use a narrower pattern that matches only arrays/objects at the very end preceded by whitespace,
             # and only if the answer is long enough that stripping won't destroy meaningful content.
-            import re as _re
             if len(answer) > 100:
                 # Strip trailing JSON arrays that got accidentally appended
                 answer = _re.sub(r'\n\s*\[[\s\S]{20,}\]\s*$', '', answer).strip()
                 answer = _re.sub(r'\n\s*\{[\s\S]{20,}\}\s*$', '', answer).strip()
+                # Strip trailing JSON-like key-value pairs that leaked into the answer
+                # e.g. answer ends with: , "evidence": [...], "risks": "..."
+                answer = _re.sub(r',?\s*"(evidence|risks|recommendation)":\s*[\[\{"][\s\S]*$', '', answer).strip()
             # Parse structured response from JSON
             evidence_list = []
             for ev in data.get("evidence", []):
@@ -187,10 +265,23 @@ async def chat(request: ChatRequest):
             # Coerce risks to string — LLM sometimes returns a list or dict
             raw_risks = data.get("risks", "")
             if isinstance(raw_risks, list):
-                risks_str = " ".join(
-                    item if isinstance(item, str) else item.get("description", str(item))
-                    for item in raw_risks
-                )
+                risk_parts = []
+                for item in raw_risks:
+                    if isinstance(item, str):
+                        risk_parts.append(item)
+                    elif isinstance(item, dict):
+                        # Handle both {description: "..."} and {risk: "...", severity: "...", impact: "..."}
+                        risk_text = item.get("description") or item.get("risk") or str(item)
+                        severity = item.get("severity", "")
+                        impact = item.get("impact", "")
+                        if severity and risk_text != str(item):
+                            risk_text = f"[{severity}] {risk_text}"
+                        if impact:
+                            risk_text += f" Impact: {impact}"
+                        risk_parts.append(risk_text)
+                    else:
+                        risk_parts.append(str(item))
+                risks_str = " | ".join(risk_parts)
             elif isinstance(raw_risks, dict):
                 risks_str = raw_risks.get("description", str(raw_risks))
             else:
@@ -273,7 +364,18 @@ async def chat_stream(request: ChatRequest):
     doc_names = [doc.filename for doc in session.documents]
     system_prompt = get_system_prompt(doc_names)
     history_dicts = [{"role": m.role, "content": m.content} for m in request.history]
-    user_prompt = build_chat_prompt(question, chunks, history=history_dicts)
+
+    # Check semantic relevance for streaming endpoint too
+    low_relevance = False
+    if chunks:
+        distances = [c.distance for c in chunks if c.distance is not None]
+        if distances:
+            avg_distance = sum(distances) / len(distances)
+            if avg_distance > 1.5:
+                low_relevance = True
+                logger.info(f"[chat/stream] Low relevance detected: avg_distance={avg_distance:.2f}")
+
+    user_prompt = build_chat_prompt(question, chunks, history=history_dicts, low_relevance=low_relevance)
 
     async def generate():
         try:
@@ -308,11 +410,38 @@ async def chat_stream(request: ChatRequest):
                 try:
                     data = json.loads(cleaned)
                 except json.JSONDecodeError:
-                    logger.warning(f"[chat/stream] JSON parse failed after all attempts. Raw first 500: {raw[:500]!r}")
+                    # Try fixing missing opening quotes on values (e.g. "impact": Unknowing... → "impact": "Unknowing...)
+                    repaired = re.sub(
+                        r'("(?:answer|evidence|risks|recommendation|quote|sourceDocument|documentType|risk|severity|impact|source|title|summary|nextSteps|confidence)")\s*:\s*(?!")([A-Z$\[][^\n,}]*)',
+                        r'\1: "\2"',
+                        cleaned,
+                    )
+                    try:
+                        data = json.loads(repaired)
+                        logger.info("[chat/stream] JSON parse succeeded after missing-quote repair")
+                    except json.JSONDecodeError:
+                        logger.warning(f"[chat/stream] JSON parse failed after all attempts. Raw first 500: {raw[:500]!r}")
 
             # If JSON parsing totally failed, treat the raw text as the answer
             if data is None:
-                answer = raw.strip()
+                # Last resort: try to regex-extract the answer field from the raw JSON-like text
+                answer_match = re.search(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', raw, re.DOTALL)
+                if answer_match:
+                    extracted_answer = answer_match.group(1)
+                    extracted_answer = extracted_answer.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+                    answer = extracted_answer
+                else:
+                    # Strip JSON wrapper characters and give the raw text
+                    fallback_answer = raw.strip()
+                    if fallback_answer.startswith("{"):
+                        fallback_answer = re.sub(r'^\{\s*', '', fallback_answer)
+                    if fallback_answer.endswith("}"):
+                        fallback_answer = re.sub(r'\s*\}$', '', fallback_answer)
+                    fallback_answer = re.sub(r'^"answer"\s*:\s*"?', '', fallback_answer).strip()
+                    fallback_answer = re.sub(r',?\s*"(evidence|risks|recommendation)":\s*[\[\{"][\s\S]*$', '', fallback_answer).strip()
+                    if fallback_answer.endswith('"'):
+                        fallback_answer = fallback_answer[:-1].strip()
+                    answer = fallback_answer if fallback_answer else raw.strip()
                 evidence_list = []
                 risks_str = ""
                 rec_str = ""
@@ -321,29 +450,51 @@ async def chat_stream(request: ChatRequest):
                 # Safety: if the answer field is a dict or a stringified JSON object,
                 # the model put structured data there — extract plain text.
                 if isinstance(answer, dict):
-                    answer = answer.get("text", answer.get("content", str(answer)))
+                    answer = answer.get("text", answer.get("content", answer.get("answer", str(answer))))
                 elif isinstance(answer, str):
                     stripped_ans = answer.strip()
                     if stripped_ans.startswith("{") and stripped_ans.endswith("}"):
                         try:
                             inner = json.loads(stripped_ans)
-                            answer = (
-                                inner.get("text")
-                                or inner.get("content")
-                                or inner.get("summary")
-                                or inner.get("answer")
-                                or stripped_ans
-                            )
+                            # Check if it's a full response object (has evidence/risks/recommendation)
+                            if "answer" in inner and ("evidence" in inner or "risks" in inner):
+                                nested_answer = inner.get("answer", "")
+                                if isinstance(nested_answer, str) and len(nested_answer) > 10:
+                                    answer = nested_answer
+                                    # If outer response has no evidence, pull from nested
+                                    if not data.get("evidence") and inner.get("evidence"):
+                                        data["evidence"] = inner["evidence"]
+                                    if not data.get("risks") and inner.get("risks"):
+                                        data["risks"] = inner["risks"]
+                                    if not data.get("recommendation") and inner.get("recommendation"):
+                                        data["recommendation"] = inner["recommendation"]
+                                else:
+                                    answer = str(nested_answer) if nested_answer else stripped_ans
+                            else:
+                                answer = (
+                                    inner.get("text")
+                                    or inner.get("content")
+                                    or inner.get("summary")
+                                    or inner.get("answer")
+                                    or stripped_ans
+                                )
                             if not isinstance(answer, str):
                                 answer = str(answer)
                         except json.JSONDecodeError:
                             pass
 
-                # Only strip truly dangling trailing JSON blobs
+                # Strip JSON key prefixes that the LLM sometimes leaves in the answer text
                 import re as _re
+                answer = _re.sub(r'^[\s"]*\*?answer\*?\s*[:=]\s*["\']?', '', answer, flags=re.IGNORECASE).strip()
+                if answer.endswith('"') and not answer.startswith('"'):
+                    answer = answer[:-1].strip()
+
+                # Only strip truly dangling trailing JSON blobs
                 if len(answer) > 100:
                     answer = _re.sub(r'\n\s*\[[\s\S]{20,}\]\s*$', '', answer).strip()
                     answer = _re.sub(r'\n\s*\{[\s\S]{20,}\}\s*$', '', answer).strip()
+                    # Strip trailing JSON-like key-value pairs that leaked into the answer
+                    answer = _re.sub(r',?\s*"(evidence|risks|recommendation)":\s*[\[\{"][\s\S]*$', '', answer).strip()
 
                 # Build evidence list
                 evidence_list = []
@@ -358,7 +509,22 @@ async def chat_stream(request: ChatRequest):
                 # Coerce risks
                 raw_risks = data.get("risks", "")
                 if isinstance(raw_risks, list):
-                    risks_str = " ".join(item if isinstance(item, str) else item.get("description", str(item)) for item in raw_risks)
+                    risk_parts = []
+                    for item in raw_risks:
+                        if isinstance(item, str):
+                            risk_parts.append(item)
+                        elif isinstance(item, dict):
+                            risk_text = item.get("description") or item.get("risk") or str(item)
+                            severity = item.get("severity", "")
+                            impact = item.get("impact", "")
+                            if severity and risk_text != str(item):
+                                risk_text = f"[{severity}] {risk_text}"
+                            if impact:
+                                risk_text += f" Impact: {impact}"
+                            risk_parts.append(risk_text)
+                        else:
+                            risk_parts.append(str(item))
+                    risks_str = " | ".join(risk_parts)
                 elif isinstance(raw_risks, dict):
                     risks_str = raw_risks.get("description", str(raw_risks))
                 else:

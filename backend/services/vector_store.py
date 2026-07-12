@@ -98,12 +98,14 @@ class VectorStore:
         results = collection.query(
             query_embeddings=[embedding],
             n_results=actual_k,
-            include=["documents", "metadatas", "embeddings"],
+            include=["documents", "metadatas", "embeddings", "distances"],
         )
 
         chunks = []
         if not results["ids"] or not results["ids"][0]:
             return chunks
+
+        distances = results.get("distances", [[]])[0] if results.get("distances") else []
 
         for i, chunk_id in enumerate(results["ids"][0]):
             text = results["documents"][0][i]
@@ -113,6 +115,8 @@ class VectorStore:
                 if results["embeddings"]
                 else []
             )
+            # Store distance in metadata for relevance filtering downstream
+            distance = distances[i] if i < len(distances) else None
 
             chunk = Chunk(
                 id=chunk_id,
@@ -121,6 +125,7 @@ class VectorStore:
                 source_document=metadata.get("source_document", ""),
                 document_type=metadata.get("document_type", "pdf"),
                 chunk_index=int(metadata.get("chunk_index", 0)),
+                distance=distance,
             )
             chunks.append(chunk)
 
