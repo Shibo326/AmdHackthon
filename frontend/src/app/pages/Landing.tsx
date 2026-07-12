@@ -13,12 +13,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Link } from "react-router";
-import { uploadDocuments, analyzeDocuments, warmupServer } from "../../lib/api";
+import { uploadDocuments, analyzeDocuments, warmupServer, getBenchmarkSpeedup } from "../../lib/api";
 import { toast } from "sonner";
 import { useAppDispatch } from "../../lib/store";
 import { motion, AnimatePresence } from "framer-motion";
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const LOADING_STAGES = [
   { label: "Extracting text", icon: "📄" },
@@ -60,32 +58,22 @@ export default function Landing() {
   // because user may intentionally navigate here to upload more documents
   // (via "← Upload", "Upload More", etc.)
 
-  // Fetch live AMD benchmark on mount (non-blocking, best-effort)
+  // Fetch live AMD benchmark on mount (non-blocking, best-effort, cached)
   useEffect(() => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
 
-    fetch(`${API_BASE}/api/benchmark`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        clearTimeout(timeout);
-        const ratio = data?.speedup_ratio;
-        if (ratio && typeof ratio === "number" && ratio > 1) {
+    getBenchmarkSpeedup(controller.signal)
+      .then((ratio) => {
+        if (ratio) {
           setBenchmarkLabel(`${ratio.toFixed(1)}×`);
           setBenchmarkSub("Faster on AMD MI300X");
         }
       })
       .catch(() => {
-        clearTimeout(timeout);
         // Silently fall back to static label — benchmark is optional
       });
 
     return () => {
-      clearTimeout(timeout);
       controller.abort();
     };
   }, []);

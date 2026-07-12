@@ -19,7 +19,7 @@ import {
   BarChart3,
   DollarSign,
 } from "lucide-react";
-import { exportReport, analyzeDocuments } from "../../lib/api";
+import { exportReport, analyzeDocuments, getBenchmarkSpeedup } from "../../lib/api";
 import { toast } from "sonner";
 import { useAppState, useAppDispatch } from "../../lib/store";
 import { sanitizeText } from "../../lib/sanitize";
@@ -49,18 +49,15 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Fetch live AMD benchmark speedup for the AMD banner
+  // Fetch live AMD benchmark speedup for the AMD banner (cached)
   useEffect(() => {
-    const apiBase = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
-    fetch(`${apiBase}/api/benchmark`, { method: "POST", headers: { "Content-Type": "application/json" } })
-      .then((r) => r.json())
-      .then((data) => {
-        const ratio = data?.speedup_ratio;
-        if (ratio && typeof ratio === "number" && ratio > 1) {
-          setLiveSpeedup(`${ratio.toFixed(1)}×`);
-        }
+    const controller = new AbortController();
+    getBenchmarkSpeedup(controller.signal)
+      .then((ratio) => {
+        if (ratio) setLiveSpeedup(`${ratio.toFixed(1)}×`);
       })
-      .catch(() => {}); // silently fallback to default
+      .catch(() => {});
+    return () => controller.abort();
   }, []);
 
   // Cmd/Ctrl+E keyboard shortcut for export
@@ -100,7 +97,7 @@ export default function Dashboard() {
     if (!sessionId || isReanalyzing) return;
     setIsReanalyzing(true);
     try {
-      const result = await analyzeDocuments(sessionId);
+      const result = await analyzeDocuments(sessionId, true);
       dispatch({ type: "SET_ANALYSIS", payload: result.analysis });
       toast.success("Re-analysis complete!");
     } catch (err) {

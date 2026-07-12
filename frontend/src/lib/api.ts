@@ -65,15 +65,16 @@ export async function uploadDocuments(files: File[]): Promise<UploadResponse> {
 /**
  * Run full AI analysis on a session's uploaded documents.
  * POST /api/analyze
+ * Pass force=true to bypass cache and re-run analysis from scratch.
  */
-export async function analyzeDocuments(sessionId: string): Promise<AnalyzeResponse> {
+export async function analyzeDocuments(sessionId: string, force = false): Promise<AnalyzeResponse> {
   const url = `${API_BASE_URL}/api/analyze`;
-  console.log(`[API] POST ${url} — sessionId=${sessionId}`);
+  console.log(`[API] POST ${url} — sessionId=${sessionId}, force=${force}`);
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, force }),
   }, 180000); // 3 min — analysis runs 5 parallel LLM calls, may take up to 2.5min
 
   console.log(`[API] POST ${url} → ${response.status}`);
@@ -316,6 +317,39 @@ export async function warmupServer(): Promise<void> {
   } catch {
     // Silently ignore — warmup is best-effort
   }
+}
+
+/**
+ * Cached benchmark result — avoids repeated LLM calls on every page mount.
+ */
+let _benchmarkCache: { ratio: number; fetchedAt: number } | null = null;
+const BENCHMARK_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Fetch AMD benchmark speedup ratio with caching.
+ * Returns the speedup ratio (e.g. 5.6) or null if unavailable.
+ */
+export async function getBenchmarkSpeedup(signal?: AbortSignal): Promise<number | null> {
+  // Return cached value if fresh
+  if (_benchmarkCache && Date.now() - _benchmarkCache.fetchedAt < BENCHMARK_CACHE_TTL) {
+    return _benchmarkCache.ratio;
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/benchmark`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+    });
+    const data = await response.json();
+    const ratio = data?.speedup_ratio;
+    if (ratio && typeof ratio === 'number' && ratio > 1) {
+      _benchmarkCache = { ratio, fetchedAt: Date.now() };
+      return ratio;
+    }
+  } catch {
+    // Silently ignore
+  }
+  return null;
 }
 
 /**

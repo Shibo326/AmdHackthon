@@ -38,6 +38,13 @@ def _err(status: int, message: str, code: str, suggestion: str = ""):
     )
 
 
+def _check_services():
+    """Return an error response if services are not initialized, or None if ready."""
+    if _embedding_service is None or _vector_store is None or _session_manager is None or _llm_service is None:
+        return _err(503, "Service is starting up. Please try again in a moment.", "SERVICE_UNAVAILABLE", "The server is still initializing. Please retry in 10-20 seconds.")
+    return None
+
+
 @router.post("/chat")
 async def chat(request: ChatRequest):
     """
@@ -51,6 +58,11 @@ async def chat(request: ChatRequest):
     vector_store = _vector_store
     session_manager = _session_manager
     llm_service = _llm_service
+
+    # Service readiness check
+    svc_err = _check_services()
+    if svc_err:
+        return svc_err
 
     session_id = request.sessionId
     question = request.question
@@ -333,6 +345,11 @@ async def chat_stream(request: ChatRequest):
     session_manager = _session_manager
     llm_service = _llm_service
 
+    # Service readiness check
+    svc_err = _check_services()
+    if svc_err:
+        return svc_err
+
     session_id = request.sessionId
     question = request.question
     start_time = time.time()
@@ -544,7 +561,7 @@ async def chat_stream(request: ChatRequest):
             for i, word in enumerate(words):
                 chunk_text = word + (" " if i < len(words) - 1 else "")
                 yield f"data: {json.dumps({'type': 'token', 'text': chunk_text})}\n\n"
-                await asyncio.sleep(0.018)  # ~55 words/sec — feels natural
+                await asyncio.sleep(0.008)  # ~125 words/sec — fast but readable
 
             elapsed_ms = int((time.time() - start_time) * 1000)
             message_id = str(uuid.uuid4())

@@ -145,6 +145,7 @@ class AnalyzeRequest(BaseModel):
     """Request body for POST /api/analyze."""
 
     sessionId: str
+    force: bool = False
 
 
 class AnalyzeResponse(BaseModel):

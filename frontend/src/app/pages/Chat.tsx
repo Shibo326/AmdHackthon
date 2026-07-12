@@ -72,6 +72,17 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const downloadRef = useRef<HTMLDivElement>(null);
+  const streamAbortRef = useRef<(() => void) | null>(null);
+
+  // Cleanup stream on unmount to prevent state updates on unmounted component
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current();
+        streamAbortRef.current = null;
+      }
+    };
+  }, []);
 
   // Close download dropdown on outside click
   useEffect(() => {
@@ -140,7 +151,7 @@ export default function Chat() {
       setIsStreaming(true);
       setIsThinking(false);
 
-      await streamChatMessage(
+      const { abort } = streamChatMessage(
         sessionId,
         trimmed,
         historyForAPI,
@@ -203,7 +214,7 @@ export default function Chat() {
         (error) => {
           setIsStreaming(false);
           setStreamingAnswer("");
-          toast.error('Message failed to send. Please try again.');
+          // Show error inline in chat — no toast needed (avoids double notification)
           const errMsg: AssistantMessage = {
             id: `err-${Date.now()}`,
             role: "assistant",
@@ -222,11 +233,11 @@ export default function Chat() {
           setMessages((prev) => [...prev, errMsg]);
         },
       );
+      streamAbortRef.current = abort;
     } catch (err) {
       setIsStreaming(false);
       setStreamingAnswer("");
       const errorMessage = err instanceof Error ? err.message : "Something went wrong.";
-      toast.error('Message failed to send. Please try again.');
       const errMsg: AssistantMessage = {
         id: `err-${Date.now()}`,
         role: "assistant",

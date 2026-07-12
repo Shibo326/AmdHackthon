@@ -46,6 +46,9 @@ async def generate_report(request: ReportRequestWithFormat):
     docx_generator = _docx_generator
     session_manager = _session_manager
 
+    if session_manager is None or pdf_generator is None:
+        return _err(503, "Service is starting up. Please try again in a moment.", "SERVICE_UNAVAILABLE", "The server is still initializing. Please retry in 10-20 seconds.")
+
     session_id = request.sessionId
     export_format = request.format
 

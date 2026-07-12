@@ -34,6 +34,13 @@ def _err(status: int, message: str, code: str, suggestion: str = ""):
     )
 
 
+def _check_services():
+    """Return an error response if services are not initialized, or None if ready."""
+    if _analysis_service is None or _session_manager is None or _vector_store is None:
+        return _err(503, "Service is starting up. Please try again in a moment.", "SERVICE_UNAVAILABLE", "The server is still initializing. Please retry in 10-20 seconds.")
+    return None
+
+
 @router.post("/suggest-questions")
 @limiter.limit("10/minute")
 async def suggest_questions(request: Request, body: AnalyzeRequest):
@@ -41,6 +48,10 @@ async def suggest_questions(request: Request, body: AnalyzeRequest):
     Generate contextually-relevant quick questions based on the uploaded documents.
     Returns 6 short questions adapted to the document type and content.
     """
+    svc_err = _check_services()
+    if svc_err:
+        return svc_err
+
     session_manager = _session_manager
     vector_store = _vector_store
     analysis_service = _analysis_service
@@ -103,6 +114,10 @@ async def analyze_documents(request: Request, body: AnalyzeRequest):
     session_manager = _session_manager
     vector_store = _vector_store
 
+    svc_err = _check_services()
+    if svc_err:
+        return svc_err
+
     session_id = body.sessionId
 
     # --- Validate session ---
@@ -111,8 +126,8 @@ async def analyze_documents(request: Request, body: AnalyzeRequest):
     except SessionNotFoundError:
         return _err(404, "Session not found.", "SESSION_NOT_FOUND", "Please upload documents first to create a session.")
 
-    # --- Cache check: return existing analysis instantly if available ---
-    if session.analysis is not None:
+    # --- Cache check: return existing analysis instantly if available (skip if force=true) ---
+    if session.analysis is not None and not body.force:
         logger.info(f"Returning cached analysis for session {session_id} (0ms)")
         response = AnalyzeResponse(
             sessionId=session_id,
@@ -165,9 +180,17 @@ async def benchmark_embeddings():
       2. Local sentence-transformers CPU baseline
 
     Returns timing, ratio, and hardware info for demo purposes.
+    Results are cached for 5 minutes to avoid excessive API calls.
     """
     import httpx
     import os
+
+    # Server-side cache (5 min TTL)
+    cache_ttl = 300
+    if hasattr(benchmark_embeddings, "_cache") and benchmark_embeddings._cache:
+        cached_at, cached_result = benchmark_embeddings._cache
+        if time.time() - cached_at < cache_ttl:
+            return JSONResponse(content=cached_result)
 
     embedding_service = _embedding_service
 
@@ -248,10 +271,15 @@ async def benchmark_embeddings():
         if amd_t > 0:
             speedup_ratio = round(cpu_t / amd_t, 2)
 
-    return {
+    result = {
         "status": "success",
         "benchmark": results,
         "speedup_ratio": speedup_ratio,
         "speedup_label": f"{speedup_ratio}x faster on AMD MI300X" if speedup_ratio else None,
         "note": "AMD MI300X benchmark via Fireworks AI embeddings endpoint",
     }
+
+    # Cache the result
+    benchmark_embeddings._cache = (time.time(), result)
+
+    return result

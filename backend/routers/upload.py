@@ -65,6 +65,10 @@ async def upload_documents(
     vector_store = _vector_store
     session_manager = _session_manager
 
+    # Service readiness check
+    if document_parser is None or embedding_service is None or vector_store is None or session_manager is None:
+        return _err(503, "Service is starting up. Please try again in a moment.", "SERVICE_UNAVAILABLE", "The server is still initializing. Please retry in 10-20 seconds.")
+
     # --- Validate file count ---
     if len(files) == 0:
         return _err(400, "At least one file is required.", "TOO_MANY_FILES", "Please select at least one file to upload.")

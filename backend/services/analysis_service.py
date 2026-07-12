@@ -158,8 +158,12 @@ class AnalysisService:
 
         # Unpack summary + questions
         if isinstance(summary_and_questions_result, Exception):
-            raise LLMParseError(f"Summary generation failed: {summary_and_questions_result}") from summary_and_questions_result
-        summary_result, suggested_questions = summary_and_questions_result
+            logger.warning(f"Summary generation failed, using fallback: {summary_and_questions_result}")
+            doc_names = [doc.filename for doc in session.documents]
+            summary_result = f"Analysis of {len(doc_names)} document(s): {', '.join(doc_names)}. The AI summary could not be generated — please review individual sections below for detailed findings."
+            suggested_questions = ["What are the key terms?", "Are there any risks?", "What conflicts exist?"]
+        else:
+            summary_result, suggested_questions = summary_and_questions_result
 
         if isinstance(risks_result, Exception):
             logger.warning(f"Risk analysis failed, using empty: {risks_result}")

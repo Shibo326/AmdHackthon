@@ -103,6 +103,9 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(report.router, prefix="/api", tags=["report"])
 app.include_router(demo.router, prefix="/api", tags=["demo"])
 
+# ---- Service Readiness Flag ----
+app.state.services_ready = False
+
 
 # ---- Global Exception Handler ----
 @app.exception_handler(Exception)
@@ -127,14 +130,20 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 @app.head("/health", tags=["health"])
 async def health_check():
     """Health check endpoint with provider and timestamp info. Supports GET and HEAD."""
-    return {
-        "status": "healthy",
-        "service": "clausify-api",
-        "version": "1.0.0",
-        "provider": "fireworks",
-        "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    ready = getattr(app.state, "services_ready", False)
+    status_code = 200 if ready else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if ready else "degraded",
+            "service": "clausify-api",
+            "version": "1.0.0",
+            "provider": "fireworks",
+            "model": os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/gpt-oss-120b"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ready": ready,
+        },
+    )
 
 
 @app.get("/api/provider-info", tags=["health"])
@@ -261,9 +270,13 @@ async def startup_event():
 
         logger.info("All services initialized — Clausify AI is ready!")
 
+        # Mark app as ready
+        app.state.services_ready = True
+
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         logger.exception("Startup exception details:")
+        app.state.services_ready = False
 
 
 # ---- Shutdown Event ----
